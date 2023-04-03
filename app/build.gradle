@@ -1,0 +1,42 @@
+plugins {
+    id 'application'
+    // Allure reportのGradleプラグイン
+    id 'io.qameta.allure' version '2.11.2'
+}
+
+repositories {
+    mavenCentral()
+}
+
+dependencies {
+    // JUnit5
+    testImplementation 'org.junit.jupiter:junit-jupiter:5.9.1'
+    // Selenium
+    testImplementation 'org.seleniumhq.selenium:selenium-java:4.8.3'
+    // Selenide
+    testImplementation 'com.codeborne:selenide:6.12.4'
+    // Allure reportのJUnit5アダプタ
+    testImplementation 'io.qameta.allure:allure-junit5:2.21.0'
+    // Selenideの動作をAllure reportに記録するツール
+    testImplementation 'io.qameta.allure:allure-selenide:2.21.0'
+    // 実行時にChromeブラウザのバージョンに応じたChromeDriverをインストールしてくれるマネージャ
+    testImplementation 'io.github.bonigarcia:webdrivermanager:5.3.2'
+    // スクショを撮るライブラリ
+    testImplementation 'ru.yandex.qatools.ashot:ashot:1.5.4'
+}
+
+test {
+    // JUnit5でテストを動かす
+    useJUnitPlatform()
+    // ビルド時にテストが動かないよう、明示的にtestタスクが実行された場合のみ、テストを実行する
+    onlyIf { 
+        return gradle.startParameter.taskNames.contains('test')
+    }
+}
+
+task allureOpen(type: Exec) {
+    doFirst {
+        commandLine 'open', "http://0.0.0.0:8080/"
+        commandLine 'allure', 'serve', 'app/build/reports/allure-report', '--port', '8080'
+    }
+}

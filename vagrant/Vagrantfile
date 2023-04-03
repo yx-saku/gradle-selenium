@@ -1,0 +1,15 @@
+Vagrant.configure("2") do |config|
+  config.vm.box = "ubuntu/focal64"
+
+  # プロビジョニングでJavaをインストール
+  config.vm.provision "shell", inline: <<-SHELL
+    apt-get update
+    apt-get install -y openjdk-11-jdk
+  SHELL
+
+  # ポートフォワーディング（任意）
+  config.vm.network "forwarded_port", guest: 8080, host: 8080
+
+  # シンクフォルダの設定
+  config.vm.synced_folder "../src", "/home/vagrant/src"
+end
