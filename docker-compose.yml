@@ -4,7 +4,7 @@ name: gradle_selenium-docker
 
 services:
   gradle_selenium:
-    build: .
+    build: ./docker
     image: gradle_selenium-docker-gradle_selenium:1.0
     ports:
       - 8088:8088
@@ -12,10 +12,10 @@ services:
     stdin_open: true
     volumes:
       - /tmp/.X11-unix:/tmp/.X11-unix
-      - ../:/src
+      - ./:/src
     environment:
       #- DISPLAY=unix$DISPLAY バグでDISPLAY環境変数が正しく参照できない https://github.com/microsoft/vscode-remote-release/issues/7565
       - DISPLAY=unix:0
       - GRADLE_USER_HOME=/src/.gradle
       - JAVA_OPTS=-Djava.awt.headless=true
-    command: ./gradlew allureServe --host 0.0.0.0 --port 8088
+    command: ./gradlew allureOpen --host 0.0.0.0 --port 8088

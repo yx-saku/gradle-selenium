@@ -17,6 +17,7 @@ import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
 import com.codeborne.selenide.CollectionCondition;
+import com.codeborne.selenide.Configuration;
 import com.codeborne.selenide.Selenide;
 import com.codeborne.selenide.logevents.SelenideLogger;
 
@@ -30,9 +31,12 @@ import ru.yandex.qatools.ashot.shooting.ShootingStrategies;
 class AppTest {
     @BeforeAll
     public static void setUp() {
+        System.out.println(System.getProperty("selenide.browser"));
         SelenideLogger.addListener("AllureSelenide", new AllureSelenide());
         WebDriverManager.chromedriver().setup();
-        // Configuration.headless = true;
+        WebDriverManager.firefoxdriver().setup();
+        WebDriverManager.edgedriver().setup();
+        Allure.suite(Configuration.browser);
     }
 
     @Test
@@ -41,7 +45,7 @@ class AppTest {
         open("https://www.google.com");
 
         // Type "Hello, world!" in the search box and submit
-        $("[name=q]").setValue("Hello, world!").pressEnter();
+        $("[name=q]").setValue("Hello, world!!!!!!!").pressEnter();
 
         // Check if search results are displayed
         $$("#search .g").shouldHave(CollectionCondition.sizeGreaterThan(0));

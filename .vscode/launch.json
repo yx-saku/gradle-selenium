@@ -2,11 +2,12 @@
     "version": "0.2.0",
     "configurations": [
         {
-            "name": "Chrome",
             "type": "java",
-            "request": "launch",
-            "mainClass": "src.AppTest",
-            "projectName": "app",
+            "name": "Remote Debug Gradle Tasks",
+            "request": "attach",
+            "hostName": "localhost",
+            "port": 5005,
+            "preLaunchTask": "gradle test debug"
         }
     ]
 }
