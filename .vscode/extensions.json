@@ -1,8 +1,5 @@
 {
     "recommendations": [
-        "ms-vscode-remote.vscode-remote-extensionpack",
-        "ms-azuretools.vscode-docker",
-        "vscjava.vscode-java-pack",
-        "vscjava.vscode-gradle"
+        "ms-vscode-remote.vscode-remote-extensionpack"
     ]
 }

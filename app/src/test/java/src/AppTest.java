@@ -9,7 +9,10 @@ import static com.codeborne.selenide.Selenide.open;
 
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
+import java.io.FileOutputStream;
 import java.io.IOException;
+import java.nio.file.Paths;
+import java.util.Properties;
 
 import javax.imageio.ImageIO;
 
@@ -31,12 +34,28 @@ import ru.yandex.qatools.ashot.shooting.ShootingStrategies;
 class AppTest {
     @BeforeAll
     public static void setUp() {
-        System.out.println(System.getProperty("selenide.browser"));
         SelenideLogger.addListener("AllureSelenide", new AllureSelenide());
         WebDriverManager.chromedriver().setup();
         WebDriverManager.firefoxdriver().setup();
         WebDriverManager.edgedriver().setup();
-        Allure.suite(Configuration.browser);
+
+        Properties properties = new Properties();
+
+        // 環境情報を追加
+        properties.setProperty("os.name", System.getProperty("os.name"));
+        properties.setProperty("os.version", System.getProperty("os.version"));
+        properties.setProperty("java.version", System.getProperty("java.version"));
+
+        // その他の環境情報を追加する場合、以下のように記述
+        // properties.setProperty("key", "value");
+
+        // allure-resultsディレクトリにenvironment.propertiesファイルを作成
+        String allureResultsPath = Paths.get("allure-results").toAbsolutePath().toString();
+        try (FileOutputStream outputStream = new FileOutputStream(allureResultsPath + "/environment.properties")) {
+            properties.store(outputStream, "Environment properties");
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
     }
 
     @Test
@@ -45,7 +64,9 @@ class AppTest {
         open("https://www.google.com");
 
         // Type "Hello, world!" in the search box and submit
-        $("[name=q]").setValue("Hello, world!!!!!!!").pressEnter();
+        $("[name=q]")
+                .setValue("Hello, world!!!!!!! " + Configuration.browser + " " + System.getProperty("selenide.browser"))
+                .pressEnter();
 
         // Check if search results are displayed
         $$("#search .g").shouldHave(CollectionCondition.sizeGreaterThan(0));

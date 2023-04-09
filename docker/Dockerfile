@@ -52,7 +52,7 @@ COPY ./entrypoint.sh /entrypoint.sh
 RUN sudo chmod +x /entrypoint.sh
 
 # ビルド時にもインストールしておく
-RUN /entrypoint.sh
+RUN IS_DOCKER_BUILD=true /entrypoint.sh
 
 # 実行時に各ブラウザをインストール
 ENTRYPOINT ["/bin/bash", "/entrypoint.sh"]

@@ -9,17 +9,20 @@ repositories {
 }
 
 dependencies {
+
     // JUnit5
     testImplementation 'org.junit.jupiter:junit-jupiter:5.9.1'
     // Selenium
     testImplementation 'org.seleniumhq.selenium:selenium-java:4.8.3'
     // Selenide
     testImplementation 'com.codeborne:selenide:6.12.4'
-    // Allure reportのJUnit5アダプタ
+    // Allure ReportのJUnit5アダプタ
     testImplementation 'io.qameta.allure:allure-junit5:2.21.0'
     // Selenideの動作をAllure reportに記録するツール
     testImplementation 'io.qameta.allure:allure-selenide:2.21.0'
-    // 実行時にChromeブラウザのバージョンに応じたChromeDriverをインストールしてくれるマネージャ
+    // Allure ReportのJavaツール
+    testImplementation 'io.qameta.allure:allure-java-commons:2.21.0'
+    // 実行時にブラウザのバージョンに応じたWebDriverをインストールしてくれるマネージャ
     testImplementation 'io.github.bonigarcia:webdrivermanager:5.3.2'
     // スクショを撮るライブラリ
     testImplementation 'ru.yandex.qatools.ashot:ashot:1.5.4'
@@ -29,6 +32,10 @@ allure {
     version = '2.19.0'
 }
 
+allureReport {
+    reportDir = file(System.env.ALLURE_REPORT_DIR)
+}
+
 test {
     // JUnit5でテストを動かす
     useJUnitPlatform()
@@ -36,37 +43,32 @@ test {
     onlyIf { 
         return gradle.startParameter.taskNames.contains('test')
     }
-    
-    // 設定ファイルからシステムプロパティを読み込む
-    def configFile = file('system.properties')
-    if (configFile.exists()) {
-        println "system.properties is found"
 
-        def properties = new Properties()
-        configFile.withInputStream { properties.load(it) }
+    doFirst {
+        // 設定ファイルからシステムプロパティを読み込む
+        def configFile = file('system.properties')
+        if (configFile.exists()) {
+            println "system.properties is found"
 
-        // システムプロパティを設定
-        properties.each { key, value ->
-            value = System.getProperty(key, value); // 引数等で指定されていたらそちらを優先
-            println "${key} = ${value}"
-            systemProperty key, value
+            def properties = new Properties()
+            configFile.withInputStream { properties.load(it) }
+
+            // システムプロパティを設定
+            properties.each { key, value ->
+                value = System.getProperty(key, value); // 引数等で指定されていたらそちらを優先
+                println "    ${key} = ${value}"
+                System.setProperty(key, value)
+            }
+
+            systemProperties System.getProperties()
         }
-    }
-    else{
-        println "system.properties is not found"
+        else{
+            println "system.properties is not found"
+        }
     }
 }
 
-import javax.inject.Inject
-import org.gradle.api.tasks.Internal
-import org.gradle.api.tasks.options.Option
-
 abstract class AllureOpen extends Exec {
-
-    @Inject
-    AllureOpen() {
-        super()
-    }
 
     @Internal
     @Option(option = "host", description = "This host will be used to start web server for the report")
@@ -79,6 +81,6 @@ abstract class AllureOpen extends Exec {
 
 task allureOpen(type: AllureOpen) {
     doFirst {
-        commandLine "sh", "-c", "build/allure/commandline/bin/allure open -h ${host.get()} -p ${port.get()} build/reports/allure-report/allureReport"
+        commandLine "sh", "-c", "$System.env.ALLURE_CLI_PATH open -h ${host.get()} -p ${port.get()} $System.env.ALLURE_REPORT_DIR"
     }
 }

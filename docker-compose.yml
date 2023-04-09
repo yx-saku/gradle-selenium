@@ -18,4 +18,5 @@ services:
       - DISPLAY=unix:0
       - GRADLE_USER_HOME=/src/.gradle
       - JAVA_OPTS=-Djava.awt.headless=true
-    command: ./gradlew allureOpen --host 0.0.0.0 --port 8088
+      - ALLURE_CLI_PATH=build/allure/commandline/bin/allure
+      - ALLURE_REPORT_DIR=build/reports/allure-report

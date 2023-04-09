@@ -3,7 +3,7 @@
     "configurations": [
         {
             "type": "java",
-            "name": "Remote Debug Gradle Tasks",
+            "name": "GUI Test",
             "request": "attach",
             "hostName": "localhost",
             "port": 5005,
