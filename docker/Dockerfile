@@ -30,8 +30,7 @@ RUN yum --nogpgcheck install -y google-chrome-stable
 # ロケールとタイムゾーン
 ENV TZ=Asia/Tokyo
 ENV LANG="ja_JP.UTF-8" \
-    LANGUAGE="ja_JP:ja" \
-    LC_ALL="ja_JP.UTF-8"
+    LANGUAGE="ja_JP:ja"
 
 # allureコマンドのダウンロード
 RUN <<EOF

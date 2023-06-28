@@ -16,7 +16,3 @@ services:
     environment:
       #- DISPLAY=unix$DISPLAY バグでDISPLAY環境変数が正しく参照できない https://github.com/microsoft/vscode-remote-release/issues/7565
       - DISPLAY=unix:0
-      - GRADLE_USER_HOME=/src/.gradle
-      - JAVA_OPTS=-Djava.awt.headless=true
-      - ALLURE_CLI_PATH=build/allure/commandline/bin/allure
-      - ALLURE_REPORT_DIR=build/reports/allure-report
