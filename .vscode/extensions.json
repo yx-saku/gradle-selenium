@@ -1,5 +1,6 @@
 {
     "recommendations": [
-        "ms-vscode-remote.vscode-remote-extensionpack"
+        "vscjava.vscode-gradle",
+        "vscjava.vscode-java-pack"
     ]
 }

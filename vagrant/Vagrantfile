@@ -1,15 +1,43 @@
 Vagrant.configure("2") do |config|
-  config.vm.box = "ubuntu/focal64"
+  config.vm.hostname = "visual-regression-test"
+  config.vm.define "visual-regression-test"
+  config.vm.provider "virtualbox" do |v|
+    v.name = "visual-regression-test"
+    v.memory = "4096" 
+    v.cpus = 4
+  end
 
-  # プロビジョニングでJavaをインストール
+  config.vm.network "forwarded_port", guest: 22, host: 2322, id: "ssh"
+
+  config.vm.box = "bento/amazonlinux-2"
+
+  config.vm.synced_folder "..\\", "/home/vagrant/visual-regression-test"
+
+  # プロビジョニング
   config.vm.provision "shell", inline: <<-SHELL
-    apt-get update
-    apt-get install -y openjdk-11-jdk
+    echo "############################################################"
+    echo "# install packages"
+    echo "############################################################"
+    yum update
+    yum install -y git
+
+    # Java11(Amazon Corretto 11)
+    echo "############################################################"
+    echo "# install java"
+    echo "############################################################"
+    yum install -y java-11-amazon-corretto-devel
+
+    # chrome
+    echo "############################################################"
+    echo "# install chrome"
+    echo "############################################################"
+    # リポジトリの出どころ
+    # https://magai.hateblo.jp/entry/2018/03/21/194425
+    cp -f /home/vagrant/visual-regression-test/vagrant/files/google-chrome.repo /etc/yum.repos.d/
+    wget https://dl.google.com/linux/linux_signing_key.pub 
+    sudo rpm --import linux_signing_key.pub
+    yum  --nogpgcheck install -y google-chrome-stable
+
+    # allure
   SHELL
-
-  # ポートフォワーディング（任意）
-  config.vm.network "forwarded_port", guest: 8080, host: 8080
-
-  # シンクフォルダの設定
-  config.vm.synced_folder "../src", "/home/vagrant/src"
 end
