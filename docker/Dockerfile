@@ -1,14 +1,45 @@
 # syntax=docker/dockerfile:1
 
-FROM openjdk:11-jdk-slim
+FROM amazonlinux:2
 
 SHELL ["/bin/bash", "-c"]
 
 ENV DEBIAN_FRONTEND=noninteractive
 
-# パッケージインストール
-RUN apt-get update
-RUN apt-get install -y --no-install-recommends git curl unzip zip wget gnupg sudo xvfb fonts-noto-cjk
+############################################################
+# install packages
+############################################################
+RUN yum update -y
+RUN yum install -y git wget timedatectl ipa-gothic-fonts
+
+############################################################
+# install Java11(Amazon Corretto 11)
+############################################################
+RUN yum install -y java-11-amazon-corretto
+
+############################################################
+# install chrome
+############################################################
+# リポジトリの出どころ
+# https://magai.hateblo.jp/entry/2018/03/21/194425
+COPY ./files/google-chrome.repo /etc/yum.repos.d/google-chrome.repo
+RUN wget -nv -O linux_signing_key.pub https://dl.google.com/linux/linux_signing_key.pub 
+RUN rpm --import linux_signing_key.pub
+RUN yum --nogpgcheck install -y google-chrome-stable
+
+# ロケールとタイムゾーン
+ENV TZ=Asia/Tokyo
+ENV LANG="ja_JP.UTF-8" \
+    LANGUAGE="ja_JP:ja" \
+    LC_ALL="ja_JP.UTF-8"
+
+# allureコマンドのダウンロード
+RUN <<EOF
+    cd ..
+    ./gradlew downloadAllure
+
+    ln -s app/build/allure/commandline/bin/allure /usr/bin/allure
+EOF
 
 # 作業ユーザー作成
 ARG UID=1000
@@ -24,37 +55,5 @@ RUN <<EOF
 EOF
 
 USER ${USER}
-
-# gradle実行環境
-RUN <<EOF
-    curl -s "https://get.sdkman.io" | bash
-    source ~/.sdkman/bin/sdkman-init.sh
-    sdk install gradle 8.0.2
-EOF
-
-# ブラウザをインストールするための準備
-RUN <<EOF
-    # Chromeのリポジトリ追加
-    curl -fsSL https://dl.google.com/linux/linux_signing_key.pub | sudo gpg --dearmor -o /etc/apt/trusted.gpg.d/google-chrome.gpg
-    sudo sh -c "echo 'deb [arch=amd64] http://dl.google.com/linux/chrome/deb/ stable main' > /etc/apt/sources.list.d/google-chrome.list"
-
-    # Firefoxインストールのため必要なリポジトリ追加
-    sudo  sh -c "echo 'deb http://deb.debian.org/debian/ unstable main contrib non-free' > /etc/apt/sources.list.d/debian.list"
-
-    # Microsoftのリポジトリ追加
-    curl -fsSL https://packages.microsoft.com/keys/microsoft.asc | sudo gpg --dearmor -o /etc/apt/trusted.gpg.d/microsoft.gpg
-    sudo sh -c "echo 'deb [arch=amd64] https://packages.microsoft.com/repos/edge/ stable main' > /etc/apt/sources.list.d/microsoft-edge.list"
-EOF
-
-WORKDIR /src
-
-COPY ./entrypoint.sh /entrypoint.sh
-RUN sudo chmod +x /entrypoint.sh
-
-# ビルド時にもインストールしておく
-RUN IS_DOCKER_BUILD=true /entrypoint.sh
-
-# 実行時に各ブラウザをインストール
-ENTRYPOINT ["/bin/bash", "/entrypoint.sh"]
 
 EXPOSE 8088

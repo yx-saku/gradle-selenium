@@ -4,36 +4,26 @@
 package src;
 
 import static com.codeborne.selenide.Selenide.$;
-import static com.codeborne.selenide.Selenide.$$;
 import static com.codeborne.selenide.Selenide.open;
 
-import java.io.ByteArrayInputStream;
-import java.io.ByteArrayOutputStream;
-import java.io.FileOutputStream;
 import java.io.IOException;
-import java.nio.file.Paths;
 import java.util.Properties;
 
-import javax.imageio.ImageIO;
-
+import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
-import com.codeborne.selenide.CollectionCondition;
 import com.codeborne.selenide.Configuration;
-import com.codeborne.selenide.Selenide;
 import com.codeborne.selenide.logevents.SelenideLogger;
 
 import io.github.bonigarcia.wdm.WebDriverManager;
 import io.qameta.allure.Allure;
 import io.qameta.allure.selenide.AllureSelenide;
-import ru.yandex.qatools.ashot.AShot;
-import ru.yandex.qatools.ashot.Screenshot;
-import ru.yandex.qatools.ashot.shooting.ShootingStrategies;
+import src.utils.ScreenshotUtils;
 
 class AppTest {
     @BeforeAll
-    public static void setUp() {
+    public static void beforeAll() {
         SelenideLogger.addListener("AllureSelenide", new AllureSelenide());
         WebDriverManager.chromedriver().setup();
         WebDriverManager.firefoxdriver().setup();
@@ -50,34 +40,46 @@ class AppTest {
         // properties.setProperty("key", "value");
 
         // allure-resultsディレクトリにenvironment.propertiesファイルを作成
-        String allureResultsPath = Paths.get("allure-results").toAbsolutePath().toString();
-        try (FileOutputStream outputStream = new FileOutputStream(allureResultsPath + "/environment.properties")) {
-            properties.store(outputStream, "Environment properties");
-        } catch (IOException e) {
-            e.printStackTrace();
-        }
+        /*
+         * String allureResultsPath =
+         * Paths.get("allure-results").toAbsolutePath().toString();
+         * try (FileOutputStream outputStream = new FileOutputStream(allureResultsPath +
+         * "/environment.properties")) {
+         * properties.store(outputStream, "Environment properties");
+         * } catch (IOException e) {
+         * e.printStackTrace();
+         * }
+         */
+
+        System.setProperty("selenide.headless", "true");
+    }
+
+    @AfterAll
+    public static void afterAll() {
     }
 
     @Test
     void openUrl() throws IOException {
+        String fileName = "chrome.png";
+
+        Allure.label("testType", "screenshotDiff");
+
         // Open Google search page
         open("https://www.google.com");
+
+        ScreenshotUtils.takeScreenshot(fileName);
 
         // Type "Hello, world!" in the search box and submit
         $("[name=q]")
                 .setValue("Hello, world!!!!!!! " + Configuration.browser + " " + System.getProperty("selenide.browser"))
                 .pressEnter();
 
+        ScreenshotUtils.moveCapture2reference(fileName);
+        ScreenshotUtils.takeScreenshot(fileName);
+
         // Check if search results are displayed
-        $$("#search .g").shouldHave(CollectionCondition.sizeGreaterThan(0));
+        // $$("#search .g").shouldHave(CollectionCondition.sizeGreaterThan(0));
 
-        Screenshot screenshot = new AShot()
-                .shootingStrategy(ShootingStrategies.viewportPasting(100))
-                .takeScreenshot(Selenide.webdriver().object());
-
-        try (ByteArrayOutputStream outputStream = new ByteArrayOutputStream()) {
-            ImageIO.write(screenshot.getImage(), "PNG", outputStream);
-            Allure.addAttachment("キャプチャ", new ByteArrayInputStream(outputStream.toByteArray()));
-        }
+        ScreenshotUtils.compareScreenshot(fileName);
     }
 }

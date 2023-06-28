@@ -1,6 +1,7 @@
 plugins {
     id 'application'
     id 'io.qameta.allure' version '2.11.2'
+    id 'io.qameta.allure-download' version '2.11.2'
 }
 
 repositories {
@@ -8,6 +9,7 @@ repositories {
 }
 
 dependencies {
+	testCompileOnly 'org.projectlombok:lombok:1.18.28'
 
     // JUnit5
     testImplementation 'org.junit.jupiter:junit-jupiter:5.9.1'
@@ -27,59 +29,9 @@ dependencies {
     testImplementation 'ru.yandex.qatools.ashot:ashot:1.5.4'
 }
 
-allure {
-    version = '2.19.0'
-}
-
-allureReport {
-    reportDir = file(System.env.ALLURE_REPORT_DIR)
-}
-
 test {
     // JUnit5でテストを動かす
     useJUnitPlatform()
-    // ビルド時にテストが動かないよう、明示的にtestタスクが実行された場合のみ、テストを実行する
-    onlyIf { 
-        return gradle.startParameter.taskNames.contains('test')
-    }
 
-    doFirst {
-        // 設定ファイルからシステムプロパティを読み込む
-        def configFile = file('system.properties')
-        if (configFile.exists()) {
-            println "system.properties is found"
-
-            def properties = new Properties()
-            configFile.withInputStream { properties.load(it) }
-
-            // システムプロパティを設定
-            properties.each { key, value ->
-                value = System.getProperty(key, value); // 引数等で指定されていたらそちらを優先
-                println "    ${key} = ${value}"
-                System.setProperty(key, value)
-            }
-
-            systemProperties System.getProperties()
-        }
-        else{
-            println "system.properties is not found"
-        }
-    }
-}
-
-abstract class AllureOpen extends Exec {
-
-    @Internal
-    @Option(option = "host", description = "This host will be used to start web server for the report")
-    final Property<String> host = project.objects.property(String)
-
-    @Internal
-    @Option(option = "port", description = "This port will be used to start web server for the report")
-    final Property<String> port = project.objects.property(String)
-}
-
-task allureOpen(type: AllureOpen) {
-    doFirst {
-        commandLine "sh", "-c", "$System.env.ALLURE_CLI_PATH open -h ${host.get()} -p ${port.get()} $System.env.ALLURE_REPORT_DIR"
-    }
+    finalizedBy "allureReport"
 }

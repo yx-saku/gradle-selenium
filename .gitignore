@@ -7,4 +7,4 @@ bin
 allure-results
 
 .vagrant
-allureOpen.log
+screenshot

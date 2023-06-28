@@ -1,0 +1,1 @@
+allure open --host 0.0.0.0 --post 8088 `dirname $0`/app/build/allure/commandline/bin/allure
