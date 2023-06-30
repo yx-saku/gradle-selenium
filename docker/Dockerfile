@@ -10,7 +10,7 @@ ENV DEBIAN_FRONTEND=noninteractive
 # install packages
 ############################################################
 RUN yum update -y
-RUN yum install -y git wget timedatectl ipa-gothic-fonts
+RUN yum install -y git wget timedatectl ipa-gothic-fonts sudo
 
 ############################################################
 # install Java11(Amazon Corretto 11)
@@ -31,14 +31,6 @@ RUN yum --nogpgcheck install -y google-chrome-stable
 ENV TZ=Asia/Tokyo
 ENV LANG="ja_JP.UTF-8" \
     LANGUAGE="ja_JP:ja"
-
-# allureコマンドのダウンロード
-RUN <<EOF
-    cd ..
-    ./gradlew downloadAllure
-
-    ln -s app/build/allure/commandline/bin/allure /usr/bin/allure
-EOF
 
 # 作業ユーザー作成
 ARG UID=1000

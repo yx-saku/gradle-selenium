@@ -4,7 +4,7 @@
         {
             "label": "gradle test debug",
             "type": "shell",
-            "command": "./gradlew -Dselenide.browser=${input:browser} test --debug-jvm allureReport --clean --rerun-tasks",
+            "command": "./gradlew --info clean test --debug-jvm allureReport --clean --rerun-tasks",
             "group": "test",
             "isBackground": true,
             "problemMatcher": {
@@ -23,20 +23,7 @@
                     "beginsPattern": ".",
                     "endsPattern": "^Listening for transport dt_socket at address:"
                 }
-            }
-        }
-    ],
-    "inputs": [
-        {
-            "id": "browser",
-            "type": "pickString",
-            "options": [
-                "chrome",
-                "firefox",
-                "edge"
-            ],
-            "default": "chrome",
-            "description": "Select browser: "
+            },
         }
     ]
 }

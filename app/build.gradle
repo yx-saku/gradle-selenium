@@ -14,24 +14,29 @@ dependencies {
     // JUnit5
     testImplementation 'org.junit.jupiter:junit-jupiter:5.9.1'
     // Selenium
-    testImplementation 'org.seleniumhq.selenium:selenium-java:4.8.3'
+    //testImplementation 'org.seleniumhq.selenium:selenium-java:4.8.3'
     // Selenide
     testImplementation 'com.codeborne:selenide:6.12.4'
     // Allure ReportのJUnit5アダプタ
-    testImplementation 'io.qameta.allure:allure-junit5:2.21.0'
+    // testImplementation 'io.qameta.allure:allure-junit5:2.21.0'
     // Selenideの動作をAllure reportに記録するツール
     testImplementation 'io.qameta.allure:allure-selenide:2.21.0'
     // Allure ReportのJavaツール
     testImplementation 'io.qameta.allure:allure-java-commons:2.21.0'
     // 実行時にブラウザのバージョンに応じたWebDriverをインストールしてくれるマネージャ
-    testImplementation 'io.github.bonigarcia:webdrivermanager:5.3.2'
+    //testImplementation 'io.github.bonigarcia:webdrivermanager:5.3.2'
     // スクショを撮るライブラリ
     testImplementation 'ru.yandex.qatools.ashot:ashot:1.5.4'
 }
 
+compileJava.options.encoding = "UTF-8"
+compileTestJava.options.encoding = "UTF-8"
+
 test {
     // JUnit5でテストを動かす
     useJUnitPlatform()
-
-    finalizedBy "allureReport"
+    // ビルド時にテストが動かないよう、明示的にtestタスクが実行された場合のみ、テストを実行する
+    onlyIf { 
+        return gradle.startParameter.taskNames.contains('test')
+    }
 }

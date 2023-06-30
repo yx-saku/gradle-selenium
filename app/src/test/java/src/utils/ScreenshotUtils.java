@@ -1,5 +1,6 @@
 package src.utils;
 
+import java.awt.image.BufferedImage;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -16,13 +17,15 @@ import ru.yandex.qatools.ashot.comparison.ImageDiffer;
 import ru.yandex.qatools.ashot.shooting.ShootingStrategies;
 
 public class ScreenshotUtils {
-    private static Configuration config = Configuration.getInstance();
-
     public static void moveCapture2reference(String fileName) throws IOException {
-        Path captureDir = Paths.get(config.get("screenshot.capture.dir"));
-        Path referenceDir = Paths.get(config.get("screenshot.reference.dir"));
+        Path captureDir = Paths.get(System.getProperty("screenshot.capture.dir"));
+        Path referenceDir = Paths.get(System.getProperty("screenshot.reference.dir"));
 
-        Files.move(captureDir.resolve(fileName), referenceDir.resolve(fileName), StandardCopyOption.REPLACE_EXISTING);
+        if (Files.exists(captureDir.resolve(fileName))) {
+            Files.createDirectories(referenceDir);
+            Files.move(captureDir.resolve(fileName), referenceDir.resolve(fileName),
+                    StandardCopyOption.REPLACE_EXISTING);
+        }
     }
 
     public static void takeScreenshot(String fileName) throws IOException {
@@ -30,21 +33,29 @@ public class ScreenshotUtils {
                 .shootingStrategy(ShootingStrategies.viewportPasting(100))
                 .takeScreenshot(Selenide.webdriver().object());
 
-        AllureUtils.attachScreenshot("今回取得したキャプチャ", screenshot.getImage());
-
-        Path dir = Paths.get(config.get("screenshot.capture.dir"));
-        Files.createDirectories(dir);
-        ImageIO.write(screenshot.getImage(), "PNG", dir.resolve(fileName).toFile());
+        saveAndAttachImage("取得したキャプチャ", "screenshot.capture.dir", fileName, screenshot.getImage());
     }
 
     public static void compareScreenshot(String fileName) throws IOException {
-        Path captureDir = Paths.get(config.get("screenshot.capture.dir"));
-        Path referenceDir = Paths.get(config.get("screenshot.reference.dir"));
+        Path referenceDir = Paths.get(System.getProperty("screenshot.reference.dir"));
+        if (Files.exists(referenceDir.resolve(fileName))) {
+            var referenceImage = ImageIO.read(referenceDir.resolve(fileName).toFile());
+            saveAndAttachImage("比較対象のキャプチャ", "screenshot.reference.dir", fileName, referenceImage);
 
-        var captureImage = ImageIO.read(captureDir.resolve(fileName).toFile());
-        var referenceImage = ImageIO.read(referenceDir.resolve(fileName).toFile());
+            Path captureDir = Paths.get(System.getProperty("screenshot.capture.dir"));
+            var captureImage = ImageIO.read(captureDir.resolve(fileName).toFile());
 
-        AllureUtils.attachScreenshot("比較対象のキャプチャ", referenceImage);
-        AllureUtils.attachScreenshot("比較結果", new ImageDiffer().makeDiff(captureImage, referenceImage).getMarkedImage());
+            var diffImage = new ImageDiffer().makeDiff(captureImage, referenceImage).getMarkedImage();
+            saveAndAttachImage("比較結果", "screenshot.diff.dir", fileName, diffImage);
+        }
+    }
+
+    private static void saveAndAttachImage(String attachName, String dirPathPropertyName, String fileName,
+            BufferedImage image) throws IOException {
+        AllureUtils.attachScreenshot(attachName, image);
+
+        Path dir = Paths.get(System.getProperty(dirPathPropertyName));
+        Files.createDirectories(dir);
+        ImageIO.write(image, "PNG", dir.resolve(fileName).toFile());
     }
 }

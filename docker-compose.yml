@@ -1,18 +1,17 @@
 version: '3.9'
 
-name: gradle_selenium-docker
-
 services:
   gradle_selenium:
     build: ./docker
     image: gradle_selenium-docker-gradle_selenium:1.0
+    #  depends_on:
+    #    - nginx_allure_report
     ports:
       - 8088:8088
     tty: true
     stdin_open: true
     volumes:
       - /tmp/.X11-unix:/tmp/.X11-unix
-      - ./:/src
     environment:
       #- DISPLAY=unix$DISPLAY バグでDISPLAY環境変数が正しく参照できない https://github.com/microsoft/vscode-remote-release/issues/7565
       - DISPLAY=unix:0

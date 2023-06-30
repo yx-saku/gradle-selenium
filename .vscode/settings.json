@@ -1,0 +1,5 @@
+{
+    "java.codeGeneration.generateComments": true,
+    "editor.pasteAs.enabled": false,
+    "debug.console.closeOnEnd": true
+}

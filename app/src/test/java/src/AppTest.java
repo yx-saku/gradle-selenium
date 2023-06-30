@@ -7,9 +7,12 @@ import static com.codeborne.selenide.Selenide.$;
 import static com.codeborne.selenide.Selenide.open;
 
 import java.io.IOException;
+import java.io.OutputStream;
+import java.nio.file.Files;
+import java.nio.file.Paths;
+import java.nio.file.StandardOpenOption;
 import java.util.Properties;
 
-import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
@@ -23,11 +26,21 @@ import src.utils.ScreenshotUtils;
 
 class AppTest {
     @BeforeAll
-    public static void beforeAll() {
+    public static void beforeAll() throws IOException {
+        System.getProperties().load(AppTest.class.getClassLoader().getResourceAsStream("config.properties"));
+
         SelenideLogger.addListener("AllureSelenide", new AllureSelenide());
-        WebDriverManager.chromedriver().setup();
-        WebDriverManager.firefoxdriver().setup();
-        WebDriverManager.edgedriver().setup();
+        switch (Configuration.browser) {
+            case "chrome":
+                WebDriverManager.chromedriver().setup();
+                break;
+            case "firefox":
+                WebDriverManager.firefoxdriver().setup();
+                break;
+            case "edge":
+                WebDriverManager.edgedriver().setup();
+                break;
+        }
 
         Properties properties = new Properties();
 
@@ -35,51 +48,54 @@ class AppTest {
         properties.setProperty("os.name", System.getProperty("os.name"));
         properties.setProperty("os.version", System.getProperty("os.version"));
         properties.setProperty("java.version", System.getProperty("java.version"));
-
-        // その他の環境情報を追加する場合、以下のように記述
-        // properties.setProperty("key", "value");
+        properties.setProperty("browser", Configuration.browser);
 
         // allure-resultsディレクトリにenvironment.propertiesファイルを作成
-        /*
-         * String allureResultsPath =
-         * Paths.get("allure-results").toAbsolutePath().toString();
-         * try (FileOutputStream outputStream = new FileOutputStream(allureResultsPath +
-         * "/environment.properties")) {
-         * properties.store(outputStream, "Environment properties");
-         * } catch (IOException e) {
-         * e.printStackTrace();
-         * }
-         */
-
-        System.setProperty("selenide.headless", "true");
-    }
-
-    @AfterAll
-    public static void afterAll() {
+        try {
+            var allureResultsPath = Paths.get(System.getProperty("allure.results.directory"));
+            Files.createDirectories(allureResultsPath);
+            try (OutputStream outputStream = Files.newOutputStream(allureResultsPath.resolve("environment.properties"),
+                    StandardOpenOption.CREATE)) {
+                properties.store(outputStream, "Environment properties");
+            }
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
     }
 
     @Test
     void openUrl() throws IOException {
-        String fileName = "chrome.png";
+        Allure.epic("スクショ比較テスト");
+        String fileName = Configuration.browser + ".png";
 
-        Allure.label("testType", "screenshotDiff");
+        int pattern = 1;
+        switch (pattern) {
+            case 0:
+                // Open Google search page
+                open("https://www.google.com");
 
-        // Open Google search page
-        open("https://www.google.com");
+                ScreenshotUtils.takeScreenshot(fileName);
 
-        ScreenshotUtils.takeScreenshot(fileName);
+                // Type "Hello, world!" in the search box and submit
+                $("[name=q]")
+                        .setValue("Hello, world!!!!!!! " + Configuration.browser + " "
+                                + System.getProperty("selenide.browser"))
+                        .pressEnter();
 
-        // Type "Hello, world!" in the search box and submit
-        $("[name=q]")
-                .setValue("Hello, world!!!!!!! " + Configuration.browser + " " + System.getProperty("selenide.browser"))
-                .pressEnter();
+                ScreenshotUtils.moveCapture2reference(fileName);
+                ScreenshotUtils.takeScreenshot(fileName);
 
-        ScreenshotUtils.moveCapture2reference(fileName);
-        ScreenshotUtils.takeScreenshot(fileName);
+                // Check if search results are displayed
+                // $$("#search .g").shouldHave(CollectionCondition.sizeGreaterThan(0));
 
-        // Check if search results are displayed
-        // $$("#search .g").shouldHave(CollectionCondition.sizeGreaterThan(0));
-
-        ScreenshotUtils.compareScreenshot(fileName);
+                ScreenshotUtils.compareScreenshot(fileName);
+                break;
+            case 1:
+                ScreenshotUtils.moveCapture2reference(fileName);
+                open("https://www.kansaigaidai.ac.jp/asp/img/pdf/82/7a79c35f7ce0704dec63be82440c8182.pdf");
+                ScreenshotUtils.takeScreenshot(fileName);
+                ScreenshotUtils.compareScreenshot(fileName);
+                break;
+        }
     }
 }
