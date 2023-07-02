@@ -3,18 +3,21 @@
  */
 package src;
 
-import static com.codeborne.selenide.Selenide.$;
-import static com.codeborne.selenide.Selenide.open;
-
 import java.io.IOException;
 import java.io.OutputStream;
 import java.nio.file.Files;
+import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.nio.file.StandardOpenOption;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.Optional;
 import java.util.Properties;
 
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
+import org.opentest4j.AssertionFailedError;
 
 import com.codeborne.selenide.Configuration;
 import com.codeborne.selenide.logevents.SelenideLogger;
@@ -22,9 +25,12 @@ import com.codeborne.selenide.logevents.SelenideLogger;
 import io.github.bonigarcia.wdm.WebDriverManager;
 import io.qameta.allure.Allure;
 import io.qameta.allure.selenide.AllureSelenide;
+import src.steps.AbstractStep;
 import src.utils.ScreenshotUtils;
 
 class AppTest {
+    private static Map<String, Integer> captureStatusMap = new HashMap<>();
+
     @BeforeAll
     public static void beforeAll() throws IOException {
         System.getProperties().load(AppTest.class.getClassLoader().getResourceAsStream("config.properties"));
@@ -66,36 +72,49 @@ class AppTest {
     @Test
     void openUrl() throws IOException {
         Allure.epic("スクショ比較テスト");
-        String fileName = Configuration.browser + ".png";
 
-        int pattern = 1;
-        switch (pattern) {
-            case 0:
-                // Open Google search page
-                open("https://www.google.com");
+        // 前回取得したキャプチャをreferenceフォルダに移動する
+        ScreenshotUtils.moveCapture2reference();
 
-                ScreenshotUtils.takeScreenshot(fileName);
+        AbstractStep.getInstance("https://www.google.com").open();
+        AbstractStep.getInstance("https://www.kansaigaidai.ac.jp/asp/img/pdf/82/7a79c35f7ce0704dec63be82440c8182.pdf")
+                .open();
 
-                // Type "Hello, world!" in the search box and submit
-                $("[name=q]")
-                        .setValue("Hello, world!!!!!!! " + Configuration.browser + " "
-                                + System.getProperty("selenide.browser"))
-                        .pressEnter();
+        // キャプチャを取得
+        var captureFileName = ScreenshotUtils.takeScreenshot();
 
-                ScreenshotUtils.moveCapture2reference(fileName);
-                ScreenshotUtils.takeScreenshot(fileName);
+        var captureFileNames = new ArrayList<String>();
+        captureFileNames.add(captureFileName);
 
-                // Check if search results are displayed
-                // $$("#search .g").shouldHave(CollectionCondition.sizeGreaterThan(0));
+        //
+        var downloadFiles = Files.list(Paths.get(Configuration.downloadsFolder)).toArray(Path[]::new);
+        for (var file : downloadFiles) {
+            String mimeType = Files.probeContentType(file);
+            switch (mimeType) {
+                case "application/pdf":
+                    var pdfCaptureFileNames = ScreenshotUtils.takePdfScreenshot(file);
+                    captureFileNames.addAll(pdfCaptureFileNames);
+                    break;
+            }
+        }
 
-                ScreenshotUtils.compareScreenshot(fileName);
-                break;
-            case 1:
-                ScreenshotUtils.moveCapture2reference(fileName);
-                open("https://www.kansaigaidai.ac.jp/asp/img/pdf/82/7a79c35f7ce0704dec63be82440c8182.pdf");
-                ScreenshotUtils.takeScreenshot(fileName);
-                ScreenshotUtils.compareScreenshot(fileName);
-                break;
+        var failureList = new ArrayList<String>();
+        for (var n : captureFileNames) {
+            var ret = ScreenshotUtils.compareScreenshot(n);
+            if (!ret) {
+                var failureCount = Optional.ofNullable(captureStatusMap.get(n)).orElse(0);
+                failureCount++;
+
+                if (failureCount >= 2) {
+                    failureList.add(n);
+                }
+
+                captureStatusMap.put(n, failureCount);
+            }
+        }
+
+        if (failureList.size() > 0) {
+            new AssertionFailedError("差異を検出しました。\nファイル名：\n    " + String.join("\n    ", failureList));
         }
     }
 }
