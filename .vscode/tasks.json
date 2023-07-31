@@ -4,7 +4,7 @@
         {
             "label": "gradle test debug",
             "type": "shell",
-            "command": "./gradlew --info clean test --debug-jvm allureReport --clean --rerun-tasks",
+            "command": "./gradlew --info test --debug-jvm allureReport --clean",
             "group": "test",
             "isBackground": true,
             "problemMatcher": {

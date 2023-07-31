@@ -8,15 +8,24 @@ repositories {
     mavenCentral()
 }
 
+sourceSets {
+    main {
+        java {
+            srcDir 'src/test/java'
+        }
+    }
+}
+
 dependencies {
 	testCompileOnly 'org.projectlombok:lombok:1.18.28'
 
     // JUnit5
     testImplementation 'org.junit.jupiter:junit-jupiter:5.9.1'
+
     // Selenium
     //testImplementation 'org.seleniumhq.selenium:selenium-java:4.8.3'
     // Selenide
-    testImplementation 'com.codeborne:selenide:6.12.4'
+    testImplementation 'com.codeborne:selenide:6.16.1'
     // Allure ReportのJUnit5アダプタ
     // testImplementation 'io.qameta.allure:allure-junit5:2.21.0'
     // Selenideの動作をAllure reportに記録するツール
@@ -29,7 +38,6 @@ dependencies {
     testImplementation 'ru.yandex.qatools.ashot:ashot:1.5.4'
     // PDFを画像化するライブラリ
     testImplementation 'org.apache.pdfbox:pdfbox:2.0.28'
-
 }
 
 compileJava.options.encoding = "UTF-8"

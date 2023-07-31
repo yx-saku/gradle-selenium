@@ -1,15 +1,14 @@
 version: '3.9'
 
 services:
-  gradle_selenium:
-    build: ./docker
-    image: gradle_selenium-docker-gradle_selenium:1.0
-    #  depends_on:
-    #    - nginx_allure_report
+  dev:
+    build:
+      context: ./docker
+      args:
+        - USER=$USER
+        - GROUP=$USER
     ports:
       - 8088:8088
-    tty: true
-    stdin_open: true
     volumes:
       - /tmp/.X11-unix:/tmp/.X11-unix
     environment:

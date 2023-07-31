@@ -3,50 +3,67 @@
  */
 package src;
 
+import static org.junit.platform.engine.discovery.DiscoverySelectors.selectClass;
+
 import java.io.IOException;
 import java.io.OutputStream;
 import java.nio.file.Files;
-import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.nio.file.StandardOpenOption;
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.Map;
-import java.util.Optional;
+import java.util.List;
 import java.util.Properties;
 
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
-import org.opentest4j.AssertionFailedError;
+import org.junit.platform.launcher.Launcher;
+import org.junit.platform.launcher.LauncherDiscoveryRequest;
+import org.junit.platform.launcher.core.LauncherDiscoveryRequestBuilder;
+import org.junit.platform.launcher.core.LauncherFactory;
+import org.junit.platform.launcher.listeners.SummaryGeneratingListener;
+import org.junit.platform.launcher.listeners.TestExecutionSummary;
+import org.junit.platform.launcher.listeners.TestExecutionSummary.Failure;
+import org.openqa.selenium.chrome.ChromeOptions;
 
 import com.codeborne.selenide.Configuration;
+import com.codeborne.selenide.Selenide;
 import com.codeborne.selenide.logevents.SelenideLogger;
 
 import io.github.bonigarcia.wdm.WebDriverManager;
 import io.qameta.allure.Allure;
 import io.qameta.allure.selenide.AllureSelenide;
-import src.steps.AbstractStep;
 import src.utils.ScreenshotUtils;
 
 class AppTest {
-    private static Map<String, Integer> captureStatusMap = new HashMap<>();
+    public static void main(String[] args) {
+        final LauncherDiscoveryRequest request = LauncherDiscoveryRequestBuilder.request()
+                .selectors(selectClass(AppTest.class))
+                .build();
+
+        final Launcher launcher = LauncherFactory.create();
+        final SummaryGeneratingListener listener = new SummaryGeneratingListener();
+
+        launcher.registerTestExecutionListeners(listener);
+        launcher.execute(request);
+
+        TestExecutionSummary summary = listener.getSummary();
+        long testFoundCount = summary.getTestsFoundCount();
+        List<Failure> failures = summary.getFailures();
+        System.out.println("getTestsSucceededCount() - " + summary.getTestsSucceededCount());
+        failures.forEach(failure -> System.out.println("failure - " + failure.getException()));
+    }
 
     @BeforeAll
     public static void beforeAll() throws IOException {
         System.getProperties().load(AppTest.class.getClassLoader().getResourceAsStream("config.properties"));
 
         SelenideLogger.addListener("AllureSelenide", new AllureSelenide());
-        switch (Configuration.browser) {
-            case "chrome":
-                WebDriverManager.chromedriver().setup();
-                break;
-            case "firefox":
-                WebDriverManager.firefoxdriver().setup();
-                break;
-            case "edge":
-                WebDriverManager.edgedriver().setup();
-                break;
-        }
+
+        var options = new ChromeOptions();
+        options.addArguments("--no-sandbox");
+        Configuration.browserCapabilities = options;
+
+        var wdm = WebDriverManager.getInstance();
+        wdm.setup();
 
         Properties properties = new Properties();
 
@@ -73,48 +90,10 @@ class AppTest {
     void openUrl() throws IOException {
         Allure.epic("スクショ比較テスト");
 
-        // 前回取得したキャプチャをreferenceフォルダに移動する
-        ScreenshotUtils.moveCapture2reference();
-
-        AbstractStep.getInstance("https://www.google.com").open();
-        AbstractStep.getInstance("https://www.kansaigaidai.ac.jp/asp/img/pdf/82/7a79c35f7ce0704dec63be82440c8182.pdf")
-                .open();
+        Selenide.open("https://www.google.com");
+        // Selenide.open("https://www.kansaigaidai.ac.jp/asp/img/pdf/82/7a79c35f7ce0704dec63be82440c8182.pdf");
 
         // キャプチャを取得
-        var captureFileName = ScreenshotUtils.takeScreenshot();
-
-        var captureFileNames = new ArrayList<String>();
-        captureFileNames.add(captureFileName);
-
-        //
-        var downloadFiles = Files.list(Paths.get(Configuration.downloadsFolder)).toArray(Path[]::new);
-        for (var file : downloadFiles) {
-            String mimeType = Files.probeContentType(file);
-            switch (mimeType) {
-                case "application/pdf":
-                    var pdfCaptureFileNames = ScreenshotUtils.takePdfScreenshot(file);
-                    captureFileNames.addAll(pdfCaptureFileNames);
-                    break;
-            }
-        }
-
-        var failureList = new ArrayList<String>();
-        for (var n : captureFileNames) {
-            var ret = ScreenshotUtils.compareScreenshot(n);
-            if (!ret) {
-                var failureCount = Optional.ofNullable(captureStatusMap.get(n)).orElse(0);
-                failureCount++;
-
-                if (failureCount >= 2) {
-                    failureList.add(n);
-                }
-
-                captureStatusMap.put(n, failureCount);
-            }
-        }
-
-        if (failureList.size() > 0) {
-            new AssertionFailedError("差異を検出しました。\nファイル名：\n    " + String.join("\n    ", failureList));
-        }
+        ScreenshotUtils.takeScreenshot();
     }
 }

@@ -10,5 +10,6 @@
         "jdk.*",
         "org.graalvm.*",
         "io.micrometer.shaded.*"
-    ]
+    ],
+    "java.configuration.updateBuildConfiguration": "automatic"
 }
