@@ -12,6 +12,7 @@ import java.nio.file.Paths;
 import java.nio.file.StandardOpenOption;
 import java.util.List;
 import java.util.Properties;
+import java.util.logging.Logger;
 
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
@@ -34,6 +35,25 @@ import io.qameta.allure.selenide.AllureSelenide;
 import src.utils.ScreenshotUtils;
 
 class AppTest {
+    static {
+        try {
+            Properties properties = new Properties();
+            properties.load(AppTest.class.getClassLoader().getResourceAsStream("config.properties"));
+
+            // システムプロパティに設定
+            for (String name : properties.stringPropertyNames()) {
+                String value = properties.getProperty(name);
+                if (System.getProperty(name) == null) { // 設定済みを優先
+                    System.setProperty(name, value);
+                }
+            }
+        } catch (IOException e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+    private static Logger LOGGER = Logger.getLogger(AppTest.class.getName());
+
     public static void main(String[] args) {
         final LauncherDiscoveryRequest request = LauncherDiscoveryRequestBuilder.request()
                 .selectors(selectClass(AppTest.class))
@@ -53,8 +73,11 @@ class AppTest {
     }
 
     @BeforeAll
-    public static void beforeAll() throws IOException {
-        System.getProperties().load(AppTest.class.getClassLoader().getResourceAsStream("config.properties"));
+    public static void beforeAll() {
+        LOGGER.info("テスト開始：BeforeAll");
+
+        LOGGER.info(System.getProperty("screenshot.reference.dir"));
+        LOGGER.info(System.getProperty("allure.results.directory"));
 
         SelenideLogger.addListener("AllureSelenide", new AllureSelenide());
 
@@ -88,6 +111,7 @@ class AppTest {
 
     @Test
     void openUrl() throws IOException {
+        LOGGER.info("テスト開始：openUrl");
         Allure.epic("スクショ比較テスト");
 
         Selenide.open("https://www.google.com");

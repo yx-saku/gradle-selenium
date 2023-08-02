@@ -6,14 +6,14 @@
             "name": "AppTest",
             "request": "launch",
             "mainClass": "src.AppTest",
-            "projectName": "app"
-        },
-        {
-            "type": "java",
-            "name": "TestRunner",
-            "request": "launch",
-            "mainClass": "src.TestRunner",
-            "projectName": "app"
+            "preLaunchTask": "build",
+            "cwd": "${workspaceFolder}/app",
+            "classPaths": [
+                "${workspaceFolder}/app/build/classes/java/main",
+                "${workspaceFolder}/app/build/resources/main",
+                "$Auto"
+            ],
+            "vmArgs": "-Dselenide.browser=firefox"
         },
         {
             "type": "java",
@@ -22,6 +22,18 @@
             "hostName": "localhost",
             "port": 5005,
             "preLaunchTask": "gradle test debug"
-        }
+        },
+        {
+            "type": "java",
+            "name": "GradleDebug",
+            "request": "launch",
+            "mainClass": "org.gradle.wrapper.GradleWrapperMain",
+            "projectName": "app",
+            "vmArgs": "-Xmx64m -Xms64m -Dorg.gradle.appname=gradlew",
+            "classPaths": [
+                "/workspaces/gradle-selenium/gradle/wrapper/gradle-wrapper.jar",
+            ],
+            "args": "--info cleanTest test"
+        },
     ]
 }

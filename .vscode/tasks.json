@@ -24,6 +24,11 @@
                     "endsPattern": "^Listening for transport dt_socket at address:"
                 }
             },
+        },
+        {
+            "label": "build",
+            "type": "shell",
+            "command": "./gradlew cleanTest build"
         }
     ]
 }
