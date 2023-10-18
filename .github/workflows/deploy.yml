@@ -6,9 +6,9 @@ on:
   workflow_dispatch:
     inputs:
       environment:
-        description: 'Deployment environment (e.g. production, staging)'
+        description: '本番にアップロードする場合は、下記に「本番」と入力してください。'
         required: true
-        default: 'staging'
+        default: '評価'
 
 
 jobs:
@@ -46,8 +46,8 @@ jobs:
         with:
           args: --acl public-read
         env:
-          AWS_S3_BUCKET: ${{ (github.event.inputs.environment == 'production') && 'production-bucket' || 'staging-bucket' }}
-          AWS_ACCESS_KEY_ID: ${{ (github.event.inputs.environment == 'production') && secrets.PROD_AWS_ACCESS_KEY_ID || secrets.STAGE_AWS_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ (github.event.inputs.environment == 'production') && secrets.PROD_AWS_SECRET_ACCESS_KEY || secrets.STAGE_AWS_SECRET_ACCESS_KEY }}
+          AWS_S3_BUCKET: ${{ (github.event.inputs.environment == '本番') && 'production-bucket' || 'staging-bucket' }}
+          AWS_ACCESS_KEY_ID: ${{ (github.event.inputs.environment == '本番') && secrets.PROD_AWS_ACCESS_KEY_ID || secrets.STAGE_AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ (github.event.inputs.environment == '本番') && secrets.PROD_AWS_SECRET_ACCESS_KEY || secrets.STAGE_AWS_SECRET_ACCESS_KEY }}
           AWS_REGION: 'ap-northeast-1'
           SOURCE_DIR: 'deploy.zip'
