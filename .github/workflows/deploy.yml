@@ -1,0 +1,53 @@
+# intellij右下のスキーマで"GitHub Workflow"を選ぶ
+
+name: Build and Deploy to S3
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Deployment environment (e.g. production, staging)'
+        required: true
+        default: 'staging'
+
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v2
+
+      - name: Set up JDK
+        uses: actions/setup-java@v2
+        with:
+          distribution: 'adopt'
+          java-version: '11'
+
+      - name: ビルド
+        run: ./gradlew build
+
+      - name: jarファイルをdeployフォルダに移動
+        run: |
+          mkdir deploy
+          mv app/build/libs/screenshot-compare-test.jar deploy/
+          mv app/build/libs/libs/ deploy/
+
+      - name: buildspec関連ファイルをdeployフォルダに移動
+        run: |
+          mv aws/CodeBuild/* deploy/
+
+      - name: zipにまとめる
+        run: zip -r deploy.zip deploy/
+
+      - name: S3にアップロード
+        uses: jakejarvis/s3-sync-action@master
+        with:
+          args: --acl public-read
+        env:
+          AWS_S3_BUCKET: ${{ (github.event.inputs.environment == 'production') && 'production-bucket' || 'staging-bucket' }}
+          AWS_ACCESS_KEY_ID: ${{ (github.event.inputs.environment == 'production') && secrets.PROD_AWS_ACCESS_KEY_ID || secrets.STAGE_AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ (github.event.inputs.environment == 'production') && secrets.PROD_AWS_SECRET_ACCESS_KEY || secrets.STAGE_AWS_SECRET_ACCESS_KEY }}
+          AWS_REGION: 'ap-northeast-1'
+          SOURCE_DIR: 'deploy.zip'

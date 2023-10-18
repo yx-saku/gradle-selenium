@@ -1,7 +1,7 @@
 plugins {
-    id 'application'
-    id 'io.qameta.allure' version '2.11.2'
-    id 'io.qameta.allure-download' version '2.11.2'
+    id "application"
+    id "io.qameta.allure" version "2.11.2"
+    id "io.qameta.allure-download" version "2.11.2"
 }
 
 repositories {
@@ -9,32 +9,60 @@ repositories {
 }
 
 dependencies {
-	compileOnly 'org.projectlombok:lombok:1.18.28'
+    compileOnly "org.projectlombok:lombok:1.18.28"
+    annotationProcessor "org.projectlombok:lombok:1.18.28"
 
     // JUnit5
-    implementation 'org.junit.jupiter:junit-jupiter:5.9.1'
-    implementation 'org.junit.platform:junit-platform-launcher:1.10.0'
+    implementation 'org.junit.jupiter:junit-jupiter:5.9.2'
+    implementation "org.junit.platform:junit-platform-launcher:1.10.0"
 
     // Selenide
-    implementation 'com.codeborne:selenide:6.16.1'
+    implementation 'com.codeborne:selenide:6.19.0'
     // Selenideの動作をAllure reportに記録するツール
-    implementation 'io.qameta.allure:allure-selenide:2.21.0'
+    implementation "io.qameta.allure:allure-selenide:2.21.0"
+    // WebDriverManager
+    implementation 'io.github.bonigarcia:webdrivermanager:5.4.1'
     // Allure ReportのJavaツール
-    implementation 'io.qameta.allure:allure-java-commons:2.21.0'
+    implementation "io.qameta.allure:allure-java-commons:2.21.0"
     // スクショを撮るライブラリ
-    implementation 'ru.yandex.qatools.ashot:ashot:1.5.4'
+    implementation "ru.yandex.qatools.ashot:ashot:1.5.4"
     // PDFを画像化するライブラリ
-    implementation 'org.apache.pdfbox:pdfbox:2.0.28'
+    implementation "org.apache.pdfbox:pdfbox:2.0.28"
+
+    // 古いバージョンに脆弱性があるため、新しいバージョンを明示的にインストール
+    implementation "commons-io:commons-io:2.14.0"
+    implementation 'com.google.code.gson:gson:2.10.1'
+    implementation 'org.bouncycastle:bcprov-jdk15on:1.70'
+
+    runtimeOnly 'org.aspectj:aspectjweaver:1.9.20.1'
+
 }
 
-compileJava.options.encoding = "UTF-8"
-compileTestJava.options.encoding = "UTF-8"
+configurations {
+    implementation.canBeResolved = true
+    runtimeOnly.canBeResolved = true
+}
 
-test {
-    // JUnit5でテストを動かす
-    useJUnitPlatform()
-    // ビルド時にテストが動かないよう、明示的にtestタスクが実行された場合のみ、テストを実行する
-    onlyIf { 
-        return gradle.startParameter.taskNames.contains('test')
-    }
+application {
+    mainClass = "screenshot.compare.test.Main"
+}
+
+run {
+    workingDir = "${buildDir}"
+}
+
+tasks.register('copyLibs', Copy) {
+    from configurations.implementation + configurations.runtimeOnly
+    into "${buildDir}/libs/libs"
+}
+
+jar {
+    dependsOn copyLibs
+
+    from sourceSets.main.output
+
+    def manifestClasspath = configurations.implementation.collect { "libs/${it.name}" }
+    manifest.attributes "Class-Path": manifestClasspath.join(" ")
+
+    archiveBaseName = "screenshot-compare-test"
 }
