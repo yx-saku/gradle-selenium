@@ -3,6 +3,22 @@
   <component name="JsonSchemaMappingsProjectConfiguration">
     <state>
       <map>
+        <entry key="AWS CloudFormation">
+          <value>
+            <SchemaInfo>
+              <option name="name" value="AWS CloudFormation" />
+              <option name="relativePathToSchema" value="https://raw.githubusercontent.com/awslabs/goformation/master/schema/cloudformation.schema.json" />
+              <option name="applicationDefined" value="true" />
+              <option name="patterns">
+                <list>
+                  <Item>
+                    <option name="path" value="aws/CloudFormation/01_S3.yml" />
+                  </Item>
+                </list>
+              </option>
+            </SchemaInfo>
+          </value>
+        </entry>
         <entry key="GitHub Workflow">
           <value>
             <SchemaInfo>
