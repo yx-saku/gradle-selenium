@@ -4,10 +4,18 @@
     <editorconfig>
       <option name="ENABLED" value="false" />
     </editorconfig>
+    <yaml>
+      <option name="INDENT_SEQUENCE_VALUE" value="false" />
+    </yaml>
     <codeStyleSettings language="Shell Script">
       <indentOptions>
         <option name="INDENT_SIZE" value="4" />
         <option name="TAB_SIZE" value="4" />
+      </indentOptions>
+    </codeStyleSettings>
+    <codeStyleSettings language="yaml">
+      <indentOptions>
+        <option name="INDENT_SIZE" value="4" />
       </indentOptions>
     </codeStyleSettings>
   </code_scheme>

@@ -1,0 +1,21 @@
+schemaVersion: 1.0
+parameters:
+-   BucketName:
+        type: string
+        description: "スクリプトが格納されているS3バケット名"
+
+phases:
+-   name: build
+    steps:
+    -   name: DownloadScript
+        action: S3Download
+        inputs:
+        -   source: s3://{{ BucketName }}/modules/installBrowser.sh
+            destination: /tmp/installBrowser.sh
+            overwrite: true
+
+    -   name: ExecuteScript
+        action: ExecuteBash
+        inputs:
+            commands:
+            - chmod +x /tmp/installBrowser.sh

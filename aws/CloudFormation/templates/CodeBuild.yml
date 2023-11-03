@@ -1,0 +1,74 @@
+AWSTemplateFormatVersion: 2010-09-09
+
+Parameters:
+    GitHubToken:
+        Type: String
+        Description: "GitHub personal access token"
+        NoEcho: true
+
+Mappings:
+    Env:
+        "443244910989":
+            Name: evl
+
+Resources:
+    CodeBuildRole:
+        Type: AWS::IAM::Role
+        Properties:
+            RoleName: !Sub
+            - user-bsdxxxx-${Env}-CodeBuildRole
+            - { Env: !FindInMap [ Env, !Ref AWS::AccountId, Name ] }
+            AssumeRolePolicyDocument:
+                Version: 2012-10-17
+                Statement:
+                -   Effect: Allow
+                    Principal:
+                        Service:
+                        - codebuild.amazonaws.com
+                    Action:
+                    - sts:AssumeRole
+            Policies:
+            -   PolicyName: !Sub
+                - user-bsdxxxx-${Env}-CodeBuildPolicy
+                - { Env: !FindInMap [ Env, !Ref AWS::AccountId, Name ] }
+                PolicyDocument:
+                    Version: 2012-10-17
+                    Statement:
+                    -   Effect: Allow
+                        Action:
+                        - ecr:GetDownloadUrlForLayer
+                        - ecr:BatchGetImage
+                        - ecr:BatchCheckLayerAvailability
+                        Resource: !ImportValue ECRRepositoryArn
+                    -   Effect: Allow
+                        Action:
+                        - s3:PutObject
+                        Resource: !Sub
+                        - ${BucketArn}/*
+                        - { BucketArn: !ImportValue BucketArn }
+
+    CodeBuildProject:
+        Type: AWS::CodeBuild::Project
+        Properties:
+            Name: !Sub
+            - user-bsdxxxx-${Env}-CodeBuildProject
+            - { Env: !FindInMap [ Env, !Ref AWS::AccountId, Name ] }
+            ServiceRole: !GetAtt CodeBuildRole.Arn
+            Source:
+                Type: GITHUB
+                Auth:
+                    Type: OAUTH
+                    Resource: !Ref GitHubToken
+                Location: https://github.com/yx-saku/gradle-selenium
+            Artifacts:
+                Type: S3
+                Location: !ImportValue BucketName
+                Name: modules
+            Environment:
+                Type: LINUX_CONTAINER
+                ComputeType: BUILD_GENERAL1_SMALL
+                Image: !ImportValue ECRRepositoryUri
+                EnvironmentVariables:
+                -   Name: PARAMETER_STORE_SECURE_STRING
+                    Value: 'your-ssm-parameter-name'
+                    Type: PARAMETER_STORE
