@@ -1,14 +1,28 @@
 #!/bin/bash -e
 
-echo "### S3 ###"
-./CloudFormation/scripts/cf.sh user-bsdxxxx-evl-S3 ./CloudFormation/templates/S3.yml \
-    -s user-bsdxxxx-evl-cf-packages
+STACK_NAME=user-bsdxxxx-evl-ScreenshotCompareTest
 
-echo "### ImageBuilder ###"
-./CloudFormation/scripts/cf.sh user-bsdxxxx-evl-ImageBuilder ./CloudFormation/templates/ImageBuilder.yml \
-    -s user-bsdxxxx-evl-cf-packages
+SHELL_PATH=$(cd $(dirname $0); pwd)
 
-echo "### CodeBuild ###"
-./CloudFormation/scripts/cf.sh user-bsdxxxx-evl-CodeBuild ./CloudFormation/templates/CodeBuild.yml \
-    -s user-bsdxxxx-evl-cf-packages \
-    -p "ParameterKey=GitHubToken,ParameterValue=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"
+case $1 in
+    cloudformation)
+        rain deploy "$SHELL_PATH/CloudFormation/templates/cf-template.yml" \
+            $STACK_NAME \
+            --config "$SHELL_PATH/CloudFormation/templates/parameters.yml" \
+            --s3-bucket user-bsdxxxx-evl-cf-packages \
+            --yes
+        ;;
+    s3)
+        BUCKET_NAME=$(aws cloudformation describe-stacks --stack-name $STACK_NAME \
+            --query '(Stacks[0].Outputs[?OutputKey==`S3Bucket`])[0].OutputValue' --output text)
+        aws s3 sync "$SHELL_PATH/S3/" s3://$BUCKET_NAME/
+        ;;
+    create-image)
+        IMAGEPIPELINE_ARN=$(aws cloudformation describe-stacks --stack-name $STACK_NAME \
+            --query '(Stacks[0].Outputs[?OutputKey==`ImagePipeline`])[0].OutputValue' --output text)
+        aws imagebuilder start-image-pipeline-execution --image-pipeline-arn $IMAGEPIPELINE_ARN
+        ;;
+    *)
+        echo "no supported command $1"
+        ;;
+esac

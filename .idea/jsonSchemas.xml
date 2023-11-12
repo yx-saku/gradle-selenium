@@ -17,6 +17,15 @@
                   <Item>
                     <option name="path" value="aws/CloudFormation/templates/CodeBuild.yml" />
                   </Item>
+                  <Item>
+                    <option name="path" value="aws/CloudFormation/templates/Main.yml" />
+                  </Item>
+                  <Item>
+                    <option name="path" value="aws/CloudFormation/templates/cf-template.yml" />
+                  </Item>
+                  <Item>
+                    <option name="path" value="aws/CloudFormation/templates/test/s3.yml" />
+                  </Item>
                 </list>
               </option>
             </SchemaInfo>

@@ -50,6 +50,79 @@ fi
 #############################################################################################################
 # 関数定義
 #
+CACHE_GET_PATH="$CACHE_DIR/${STACK_NAME}_get.json"
+
+function cacheCli() {
+    local COMMAND="$1"
+    local STACK_NAME="$2"
+    local NO_CACHE="$3"
+
+    if [ ! -e "$CACHE_GET_PATH" ]; then
+        echo "{}" > "$CACHE_GET_PATH"
+    fi
+
+    if [ "$NO_CACHE" == "" ]; then
+        RET=$(cat "$CACHE_GET_PATH" | jq -r \
+            --arg command "$COMMAND" \
+            --arg stackName "$STACK_NAME" \
+            '.[$command].[$stackName] // ""'
+        )
+    fi
+
+    if [ "$RET" == "" ]; then
+        case $COMMAND in
+        describe-stack)
+            RET=$(aws cloudformation describe-stacks --stack-name $STACK_NAME)
+            ;;
+        stack-status)
+            RET=$(aws cloudformation list-stacks --query "StackSummaries[?StackName=='$STACK_NAME']" | jq -r \
+                '.[0].StackStatus // ""')
+            ;;
+        parameters)
+            RET=$(cacheCli describe-stack $STACK_NAME  | jq -c \
+                '[(.Stacks[].Parameters // [])[].ParameterKey | { "ParameterKey": ., "UsePreviousValue": true } ]')
+            ;;
+        capabilities)
+            RET=$(cacheCli describe-stack $STACK_NAME  | jq -r '(.Stacks[].Capabilities // []) | join(" ")')
+            ;;
+        describe-stack-resources)
+            STACK_ID=$(cacheCli last-stack-id $STACK_NAME)
+            RET=$(aws cloudformation describe-stack-resources --stack-name $STACK_ID)
+            ;;
+        get-template)
+            RET=$(aws cloudformation get-template --stack-name $STACK_NAME | jq -r ".TemplateBody" | rain fmt --json)
+            ;;
+        get-template-summary)
+            STACK_ID=$(cacheCli last-stack-id $STACK_NAME)
+            RET=$(aws cloudformation get-template-summary --stack-name $STACK_ID)
+            ;;
+        last-stack-id)
+            RET=$(aws cloudformation list-stacks --query "StackSummaries[?StackName=='$STACK_NAME']" | jq -r '[.[] |
+                select(.StackStatus != "REVIEW_IN_PROGRESS" and .StackStatus != "ROLLBACK_COMPLETE")] |
+                .[0].StackId // ""')
+            ;;
+        esac
+
+        local ARG=
+        set +e
+        if echo "$RET" | jq . >/dev/null 2>&1; then
+            ARG=argjson
+        else
+            ARG=arg
+        fi
+        set -e
+
+        CACHE_GET=$(cat "$CACHE_GET_PATH" | jq \
+            --arg command "$COMMAND" \
+            --arg stackName "$STACK_NAME" \
+            --$ARG ret "$RET" \
+            '(.[$command].[$stackName] = $ret)')
+
+         echo "$CACHE_GET" > "$CACHE_GET_PATH"
+    fi
+
+    echo "$RET"
+}
 
 function checkExists() {
     set +e
@@ -64,16 +137,9 @@ function checkExists() {
 
 function getResourcesToImport(){
     local STACK_NAME=$1
-    local DESCRIBE_STACK_RESOURCES="$2"
-    local TEMPLATE_SUMMARY="$3"
 
-    if [ "$DESCRIBE_STACK_RESOURCES" == "" ]; then
-        DESCRIBE_STACK_RESOURCES=$(aws cloudformation describe-stack-resources --stack-name $STACK_NAME)
-    fi
-
-    if [ "$TEMPLATE_SUMMARY" == "" ]; then
-        TEMPLATE_SUMMARY=$(aws cloudformation get-template-summary --stack-name $STACK_NAME)
-    fi
+    local DESCRIBE_STACK_RESOURCES=$(cacheCli describe-stack-resources $STACK_NAME)
+    local TEMPLATE_SUMMARY=$(cacheCli get-template-summary $STACK_NAME)
 
     jq -n \
         --argjson r "$DESCRIBE_STACK_RESOURCES" \
@@ -99,27 +165,16 @@ function getResourcesToImport(){
 
 function deleteStackWithRetainResources(){
     local STACK_NAME=$1
-    local STACK_STATUS=$2
-    local STACK_TEMPLATE_SUMMARY="$3"
-    shift 3
-    local REPLACE_TARGET_IDS="$@"
+    shift 1
+    local REPLACE_TARGET_IDS=("$@")
 
-    if [ "$STACK_STATUS" == "" ]; then
-        STACK_STATUS=$(aws cloudformation list-stacks --query "StackSummaries[?StackName=='$STACK_NAME']" |
-            jq -rb '[.[] | select(.StackStatus != "REVIEW_IN_PROGRESS")] | .[0].StackStatus')
-    fi
-
-    if [ "$STACK_TEMPLATE_SUMMARY" == "" ]; then
-        STACK_TEMPLATE_SUMMARY=$(aws cloudformation get-template-summary --stack-name $STACK_NAME)
-    fi
+    local STACK_STATUS=$(cacheCli stack-status $STACK_NAME)
 
     if [[ "$STACK_STATUS" != "DELETE_COMPLETE" ]]; then
         if [ "$STACK_STATUS" != "ROLLBACK_COMPLETE" ] ; then
-            echo "get stack template"
-            STACK_TEMPLATE=$(aws cloudformation get-template --stack-name $STACK_NAME | jq -r ".TemplateBody" | rain fmt --json)
-            STACK_PARAMETERS=$(echo "$STACK_TEMPLATE_SUMMARY" | jq \
-                '[.Parameters[].ParameterKey | { "ParameterKey": ., "UsePreviousValue": true } ]')
-            STACK_CAPABILITIES=$(echo "$STACK_TEMPLATE_SUMMARY" | jq -r '(.Capabilities // []) | join(" ")')
+            local STACK_TEMPLATE=$(cacheCli get-template $STACK_NAME)
+            local STACK_PARAMETERS=$(cacheCli parameters $STACK_NAME)
+            local STACK_CAPABILITIES=$(cacheCli capabilities $STACK_NAME)
 
             if [ ${#REPLACE_TARGET_IDS[@]} -eq 0 ]; then
                 # 全てのリソースのDeletionPolicyをRetainに変更
@@ -138,8 +193,8 @@ function deleteStackWithRetainResources(){
             fi
 
             # スタックのDeletionPolicyを更新
-            executeChangeSet "$STACK_NAME" "cf-script-update-deletion-policy-change-set" \
-                "$STACK_TEMPLATE" "$STACK_PARAMETERS" "$STACK_CAPABILITIES" "for DeletionPolicy=Retain update $STACK_NAME"
+            updateStack "$STACK_NAME" "$STACK_TEMPLATE" "$STACK_PARAMETERS" "$STACK_CAPABILITIES" \
+                "for DeletionPolicy=Retain update $STACK_NAME"
         fi
 
         if [ ${#REPLACE_TARGET_IDS[@]} -eq 0 ]; then
@@ -157,21 +212,22 @@ function deleteStackWithRetainResources(){
                     'reduce $deleteKeys[] as $key (. ; .Resources |= del(.[ $key ]))')
 
             if [ "$(echo "$STACK_TEMPLATE" | jq '.Resources | to_entries | length')" != "0" ]; then
-                executeChangeSet "$STACK_NAME" "cf-script-delete-old-resources-change-set" \
-                    "$STACK_TEMPLATE" "$STACK_PARAMETERS" "$STACK_CAPABILITIES" "for delete old resources $STACK_NAME"
+                updateStack "$STACK_NAME" "$STACK_TEMPLATE" "$STACK_PARAMETERS" "$STACK_CAPABILITIES" \
+                    "for delete old resources $STACK_NAME"
             fi
         fi
     fi
 }
 
-function executeChangeSet() {
+function updateStack() {
     local STACK_NAME="$1"
-    local CHANGE_SET_NAME="$2"
-    local TEMPLATE_BODY="$3"
-    local PARAMETERS="$4"
-    local CAPABILITIES="$5"
-    local MESSAGE="$6"
-    local RESOURCES_TO_IMPORT="$7"
+    local TEMPLATE_BODY="$2"
+    local PARAMETERS="$3"
+    local CAPABILITIES="$4"
+    local MESSAGE="$5"
+    local RESOURCES_TO_IMPORT="$6"
+
+    local CHANGE_SET_NAME="cf-script-import-resources-change-set"
 
     # yamlに変換してファイル出力
     if [[ "$TEMPLATE_BODY" != file://* ]]; then
@@ -200,16 +256,9 @@ function executeChangeSet() {
     elif [ "$EXISTS_STACK" == "false" ]; then
         # 新規作成
         COMMAND=create
-        OPTIONS=(--change-set-type CREATE)
     else
         # 更新
         COMMAND=update
-    fi
-
-    # 失敗した変更セットが残っていたら削除
-    if [ $(checkExists $STACK_NAME $CHANGE_SET_NAME) -eq 0 ]; then
-        echo "delete change set"
-        aws cloudformation delete-change-set "${CHANGE_SET_NAME_OPTIONS[@]}"
     fi
 
     # パラメータ
@@ -230,35 +279,66 @@ function executeChangeSet() {
         OPTIONS+=(--capabilities "${CAPABILITIES[@]}")
     fi
 
-    echo "create change set $MESSAGE"
-    aws cloudformation create-change-set \
-        "${CHANGE_SET_NAME_OPTIONS[@]}" \
-        --template-body "$TEMPLATE_BODY" \
-        "${OPTIONS[@]}"
-
-    echo "... wait create change set ..."
-    set +e
-    ERROR=$(aws cloudformation wait change-set-create-complete "${CHANGE_SET_NAME_OPTIONS[@]}" 2>&1 > /dev/null)
-    set -e
-    echo
-
-    DESCRIBE_CHANGE_SET=$(aws cloudformation describe-change-set "${CHANGE_SET_NAME_OPTIONS[@]}")
-    EXECUTION_STATUS=$(echo "$DESCRIBE_CHANGE_SET" | jq -r ".ExecutionStatus")
-    STATUS_REASON=$(echo "$DESCRIBE_CHANGE_SET" | jq -r ".StatusReason")
-
-    if [ "$EXECUTION_STATUS" == "AVAILABLE" ]; then
-        echo "execute change set $MESSAGE"
-        aws cloudformation execute-change-set "${CHANGE_SET_NAME_OPTIONS[@]}"
-
-        echo "... wait stack $COMMAND complete ..."
-        aws cloudformation wait stack-$COMMAND-complete --stack-name $STACK_NAME
-        echo
-    elif [[ "$STATUS_REASON" == "The submitted information didn't contain changes."* ]]; then
-        echo "update not exists. delete change set"
+    # 失敗した変更セットが残っていたら削除
+    if [ $(checkExists $STACK_NAME $CHANGE_SET_NAME) -eq 0 ]; then
+        echo "delete change set"
         aws cloudformation delete-change-set "${CHANGE_SET_NAME_OPTIONS[@]}"
+    fi
+
+    if [ "$COMMAND" == "import" ]; then
+        # インポート（changeset）
+        echo "create change set $MESSAGE $STACK_NAME"
+        aws cloudformation create-change-set \
+            "${CHANGE_SET_NAME_OPTIONS[@]}" \
+            --template-body "$TEMPLATE_BODY" \
+            "${OPTIONS[@]}"
+
+        echo "... wait create change set ..."
+        set +e
+        local ERROR=$(aws cloudformation wait change-set-create-complete "${CHANGE_SET_NAME_OPTIONS[@]}" 2>&1 > /dev/null)
+        set -e
+        echo
+
+        local DESCRIBE_CHANGE_SET=$(aws cloudformation describe-change-set "${CHANGE_SET_NAME_OPTIONS[@]}")
+        local EXECUTION_STATUS=$(echo "$DESCRIBE_CHANGE_SET" | jq -r ".ExecutionStatus")
+        local STATUS_REASON=$(echo "$DESCRIBE_CHANGE_SET" | jq -r ".StatusReason")
+
+        if [ "$EXECUTION_STATUS" == "AVAILABLE" ]; then
+            echo "execute change set $MESSAGE $STACK_NAME"
+            aws cloudformation execute-change-set "${CHANGE_SET_NAME_OPTIONS[@]}"
+
+            echo "... wait stack $COMMAND complete ..."
+            aws cloudformation wait stack-$COMMAND-complete --stack-name $STACK_NAME
+            echo
+        elif [[ "$STATUS_REASON" == "The submitted information didn't contain changes."* ]]; then
+            echo "update not exists. delete change set"
+            aws cloudformation delete-change-set "${CHANGE_SET_NAME_OPTIONS[@]}"
+        else
+            echo "$ERROR"
+            exit 1
+        fi
     else
-        echo "$ERROR"
-        exit 1
+        # 更新・作成
+        echo "$COMMAND stack $MESSAGE $STACK_NAME"
+        set +e
+        aws cloudformation $COMMAND-stack \
+            --stack-name $STACK_NAME \
+            --template-body "$TEMPLATE_BODY" \
+            "${OPTIONS[@]}" > /tmp/cf-error 2>&1
+        local RET=$?
+        set -e
+
+        local ERROR=$(cat /tmp/cf-error)
+        if [ $RET -eq 0 ]; then
+            echo "... wait stack $COMMAND complete ..."
+            aws cloudformation wait stack-$COMMAND-complete --stack-name $STACK_NAME
+            echo
+        elif [[ "$ERROR" == *"No updates are to be performed."* ]]; then
+            echo "update not exists."
+        else
+            echo "$ERROR"
+            exit 1
+        fi
     fi
 }
 
@@ -267,37 +347,19 @@ function executeChangeSet() {
 #
 
 # 変更先スタックの存在確認　同じ名前でリプレイスする場合はスルー
-if [[ "$STACK_NAME" != "$CHANGE_STACK_NAME" && $(checkExists $CHANGE_STACK_NAME) -eq 0 ]]; then
-    STACK_STATUS=$(aws cloudformation describe-stacks --stack-name $CHANGE_STACK_NAME | jq -r ".Stacks[0].StackStatus")
-    if [ "$STACK_STATUS" != "REVIEW_IN_PROGRESS" ]; then
-        echo "スタック $CHANGE_STACK_NAME は既に存在します。"
-        exit
-    fi
-fi
-
-if [ "$PKG_S3_BUCKET" == "" ]; then
-    TEMPLATE=$(cat "$TEMPLATE_PATH")
-else
-    TEMPLATE=$(rain pkg "$TEMPLATE_PATH" --s3-bucket "$PKG_S3_BUCKET")
-fi
-
-TEMPLATE=$(echo "$TEMPLATE" | rain fmt --json)
-
-CACHE_TEMPLATE_PATH="${CACHE_DIR}/${CHANGE_STACK_NAME}_template.json"
-if [[ "$STACK_NAME" == "$CHANGE_STACK_NAME" && -e "$CACHE_TEMPLATE_PATH" ]]; then
-    if [ "$(echo "$TEMPLATE" | jq -cS)" == "$(cat "$CACHE_TEMPLATE_PATH" | jq -cS)" ]; then
-        echo "テンプレートに変更はありませんでした。"
-        exit
+if [ "$STACK_NAME" != "$CHANGE_STACK_NAME" ]; then
+    echo "check exists $CHANGE_STACK_NAME"
+    if [ $(checkExists $CHANGE_STACK_NAME) -eq 0 ]; then
+        STACK_STATUS=$(cacheCli stack-status $CHANGE_STACK_NAME)
+        if [ "$STACK_STATUS" != "REVIEW_IN_PROGRESS" ]; then
+            echo "スタック $CHANGE_STACK_NAME は既に存在します。"
+            exit
+        fi
     fi
 fi
 
 # スタックの最新情報を取得
-echo "get stack information"
-{
-    read -r STACK_ID
-    read -r STACK_STATUS
-} <<< $(aws cloudformation list-stacks --query "StackSummaries[?StackName=='$STACK_NAME']" |
-    jq -rb '[.[] | select(.StackStatus != "REVIEW_IN_PROGRESS")] | .[0].StackId, .[0].StackStatus')
+STACK_STATUS=$(cacheCli stack-status $STACK_NAME)
 
 if [ "$STACK_STATUS" == "ROLLBACK_IN_PROGRESS" ]; then
     echo "... wait stack rollback complete ..."
@@ -305,17 +367,12 @@ if [ "$STACK_STATUS" == "ROLLBACK_IN_PROGRESS" ]; then
     echo
 fi
 
-if [ "$STACK_ID" != "null" ]; then
-    DESCRIBE_STACK_RESOURCES=$(aws cloudformation describe-stack-resources --stack-name $STACK_ID)
-fi
-
 # インポート時に指定する各リソースの識別子を取得
 echo "get resources to import"
 if [ "$RESOURCES_TO_IMPORT_PATH" != "" ]; then
     RESOURCES_TO_IMPORT=$(cat "$RESOURCES_TO_IMPORT_PATH")
-elif [ "$STACK_ID" != "null" ]; then
-    STACK_TEMPLATE_SUMMARY=$(aws cloudformation get-template-summary --stack-name $STACK_NAME)
-    RESOURCES_TO_IMPORT=$(getResourcesToImport $STACK_ID "$DESCRIBE_STACK_RESOURCES" "$STACK_TEMPLATE_SUMMARY")
+elif [ "$STACK_STATUS" != "" ]; then
+    RESOURCES_TO_IMPORT=$(getResourcesToImport $STACK_NAME)
 else
     RESOURCES_TO_IMPORT="[]"
 fi
@@ -325,18 +382,16 @@ if [ "$APPEND_RESOURCES_TO_IMPORT_PATH" != "" ]; then
 fi
 
 # 既存のスタックに存在しないLogicalIdのリソースに、どの既存リソースをインポートするか選択する
+echo "choise import resources"
+if [ "$PKG_S3_BUCKET" != "" ]; then
+    S3_BUCKET_OPT=--s3-bucket "$PKG_S3_BUCKET"
+fi
+
+TEMPLATE=$(rain pkg "$TEMPLATE_PATH" $S3_BUCKET_OPT | rain fmt --json)
 TEMPLATE_RESOURCES=$(echo "$TEMPLATE" | jq -cb '.Resources | to_entries | .[]')
 TEMPLATE_RESOURCE_IDS=$(echo "$TEMPLATE_RESOURCES" | jq -cs "[.[].key]")
 
-echo "get local template summary"
 LOCAL_TEMPLATE_SUMMARY=$(aws cloudformation get-template-summary --template-body "$TEMPLATE")
-
-NEW="なし（新規作成）"
-INPUT="リソースIDを入力する"
-PS3="番号を入力: "
-
-IMPORT_RESOURCE_IDS=()
-REPLACE_TARGET_IDS=()
 
 CACHE_CHOICES_PATH="${CACHE_DIR}/${STACK_NAME}_choices.json"
 if [ -e "$CACHE_CHOICES_PATH" ]; then
@@ -350,6 +405,15 @@ if [[ "$STACK_NAME" != "$CHANGE_STACK_NAME" || "$STACK_STATUS" == "DELETE_COMPLE
     DELETE_STACK=true
 fi
 
+NEW="なし（新規作成）"
+INPUT="リソースIDを入力する"
+PS3="番号を入力: "
+
+IMPORT_RESOURCE_IDS=()
+REPLACE_TARGET_IDS=()
+
+DESCRIBE_STACK_RESOURCES=$(cacheCli describe-stack-resources $STACK_NAME)
+
 _IFS="$IFS"
 IFS=$'\n'
 for r in $TEMPLATE_RESOURCES; do
@@ -357,7 +421,7 @@ for r in $TEMPLATE_RESOURCES; do
     RESOURCE_ID=$(echo "$r" | jq -r ".key")
     RESOURCE_TYPE=$(echo "$r" | jq -r ".value.Type")
 
-    if [ "$DESCRIBE_STACK_RESOURCES" != "" ]; then
+    if [ "$STACK_STATUS" != "" ]; then
         if echo "$DESCRIBE_STACK_RESOURCES" | jq --exit-status \
                 --arg id "$RESOURCE_ID" \
                 '.StackResources | any(.ResourceStatus != "DELETE_COMPLETE" and .LogicalResourceId == $id)' > /dev/null; then
@@ -487,13 +551,15 @@ done
 
 # 名称を変更するスタック、もしくはリソースを保持したまま削除する
 if [[ "$DELETE_STACK" == "true" || ${#REPLACE_TARGET_IDS[@]} -ne 0 ]]; then
-    deleteStackWithRetainResources $STACK_NAME $STACK_STATUS $STACK_TEMPLATE_SUMMARY "${REPLACE_TARGET_IDS[@]}"
+    echo "update delete policy for prepare import"
+    deleteStackWithRetainResources $STACK_NAME "${REPLACE_TARGET_IDS[@]}"
 fi
 
 LOCAL_CAPABILITIES=$(echo "$LOCAL_TEMPLATE_SUMMARY" | jq -r '(.Capabilities // []) | join(" ")')
 
 # リソースをインポートする
 if [ ${#IMPORT_RESOURCE_IDS[@]} -ne 0 ]; then
+    echo "import resources"
     IMPORT_RESOURCE_IDS=$(IFS=$'\n'; echo "${IMPORT_RESOURCE_IDS[*]}" | jq -csR 'split("\n")[:-1]')
 
     IMPORT_RESOURCES_TEMPLATE=$(echo "$TEMPLATE" | jq \
@@ -516,34 +582,39 @@ if [ ${#IMPORT_RESOURCE_IDS[@]} -ne 0 ]; then
             '[.[] | select(.LogicalResourceId as $lid | $importResourceIds | index($lid))]')
 
     # インポート
-    executeChangeSet "$CHANGE_STACK_NAME" "cf-script-import-resources-change-set" \
-        "$IMPORT_RESOURCES_TEMPLATE" "${PARAMETERS[*]}" "$LOCAL_CAPABILITIES" "for import resources" "$RESOURCES_TO_IMPORT"
+    updateStack "$CHANGE_STACK_NAME" "$IMPORT_RESOURCES_TEMPLATE" "${PARAMETERS[*]}" "$LOCAL_CAPABILITIES" \
+        "for import resources" "$RESOURCES_TO_IMPORT"
 fi
 
-if [ "$STACK_ID" != "null" ]; then
-    EXPORTS=$(aws cloudformation list-exports | jq --arg id "$STACK_ID" -r '.Exports[] | select(.ExportingStackId == $id) | .Name')
-    for e in $EXPORTS; do
-        if [ "$IMPORT_STACKS" != "" ]; then
-            IMPORT_STACKS+=$'\n'
-        fi
-        set +e
-        IMPORT_STACKS+=$(aws cloudformation list-imports --export-name $e 2> /dev/null | jq -r ".Imports[]")
-        set -e
-    done
-
-    IMPORT_STACKS=$(echo "$IMPORT_STACKS" | sort | uniq)
-    echo "$IMPORT_STACKS"
-
-    for i in $IMPORT_STACKS; do
-        deleteStackWithRetainResources $i "" $STACK_TEMPLATE_SUMMARY
-    done
-fi
+# TODO うまくいかないので一旦ナシ
+#if [ "$STACK_STATUS" != "" ]; then
+#    # インポートされている値を実数値に直して更新する
+#    STACK_ID=$(cacheCli describe-stack $STACK_NAME | jq -r ".Stacks[].StackId")
+#    EXPORTS=$(aws cloudformation list-exports | jq --arg id "$STACK_ID" -rc '.Exports[] | select(.ExportingStackId == $id)')
+#    for e in $EXPORTS; do
+#        EXPORT_NAME=$(echo "$e" | jq -r ".Name")
+#        EXPORT_VALUE=$(echo "$e" | jq -r ".Value")
+#
+#        if [ "$IMPORT_STACKS" != "" ]; then
+#            IMPORT_STACKS+=$'\n'
+#        fi
+#
+#        set +e
+#        IMPORT_STACKS+=$(aws cloudformation list-imports --export-name $EXPORT_NAME 2> /dev/null | jq -r ".Imports[]")
+#        set -e
+#    done
+#
+#    IMPORT_STACKS=$(echo "$IMPORT_STACKS" | sort | uniq)
+#
+#    for i in $IMPORT_STACKS; do
+#        deleteStackWithRetainResources $i
+#    done
+#fi
 
 # テンプレートと同じように更新
-executeChangeSet "$CHANGE_STACK_NAME" "cf-script-update-by-template-change-set" \
-    "$TEMPLATE" "${PARAMETERS[*]}" "$LOCAL_CAPABILITIES" "for update by template"
+updateStack "$CHANGE_STACK_NAME" "$TEMPLATE" "${PARAMETERS[*]}" "$LOCAL_CAPABILITIES" "for update by template"
 
 rm -f "$CACHE_CHOICES_PATH"
-echo "$TEMPLATE" > "$CACHE_TEMPLATE_PATH"
+rm -f "$CACHE_GET_PATH"
 
 echo "completed"

@@ -9,4 +9,5 @@ allure-results
 .vagrant
 screenshot
 
-aws/CloudFormation/scripts/templates
+aws/CloudFormation/_bk_scripts
+aws/CloudFormation/import_scripts/test

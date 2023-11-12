@@ -8,7 +8,7 @@ while true; do
     fi
 
     NEXT_TOKEN=$(echo "$RET" | jq -r 'if has("nextToken") then .nextToken end')
-    if [ "$NEXT_TOKEN" != "" ]; then
+    if [ "$NEXT_TOKEN" == "" ]; then
         break
     fi
 

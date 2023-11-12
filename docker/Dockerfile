@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1
 
-FROM public.ecr.aws/amazoncorretto/amazoncorretto:17
+FROM public.ecr.aws/amazoncorretto/amazoncorretto:11
 
 SHELL ["/bin/bash", "-c"]
 
@@ -10,24 +10,11 @@ ENV DEBIAN_FRONTEND=noninteractive
 # install packages
 ############################################################
 RUN yum update -y
-RUN yum install -y git wget timedatectl ipa-gothic-fonts sudo tar which
+RUN yum install -y git wget timedatectl ipa-gothic-fonts sudo tar which jq unzip
 
-############################################################
-# install chrome
-############################################################
-# リポジトリの出どころ
-# https://magai.hateblo.jp/entry/2018/03/21/194425
-RUN yum install -y atk at-spi2-atk cups-libs libdrm libxkbcommon libXcomposite libXdamage libXrandr mesa-libgbm pango alsa-lib
-RUN <<EOF
-    curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.3/install.sh | bash
-    . ~/.nvm/nvm.sh
-    nvm install 16
-
-    CHROME_PATH=`npx @puppeteer/browsers install chrome@stable --path /opt/installs | awk '{ print $2 }' | xargs dirname`
-    cp -rf $CHROME_PATH /opt/chrome
-    ln -s /opt/chrome/chrome /usr/bin/chrome 
-    rm -rf /opt/installs
-EOF
+RUN wget https://github.com/aws-cloudformation/rain/releases/download/v1.6.0/rain-v1.6.0_linux-amd64.zip \
+    unzip rain-v1.6.0_linux-amd64.zip \
+    ln -s /usr/bin/rain rain-v1.6.0_linux-amd64/rain-v1.6.0_linux-amd64/rain
 
 # ロケールとタイムゾーン
 ENV TZ=Asia/Tokyo

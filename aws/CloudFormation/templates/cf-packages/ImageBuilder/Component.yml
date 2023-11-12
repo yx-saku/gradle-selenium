@@ -1,8 +1,8 @@
 schemaVersion: 1.0
+
 parameters:
 -   BucketName:
         type: string
-        description: "スクリプトが格納されているS3バケット名"
 
 phases:
 -   name: build
@@ -14,8 +14,11 @@ phases:
             destination: /tmp/installBrowser.sh
             overwrite: true
 
-    -   name: ExecuteScript
+    -   name: InstallBrowsers
         action: ExecuteBash
         inputs:
             commands:
             - chmod +x /tmp/installBrowser.sh
+            - /tmp/installBrowser.sh chrome
+            - /tmp/installBrowser.sh firefox
+            - /tmp/installBrowser.sh edge

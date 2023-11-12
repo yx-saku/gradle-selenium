@@ -1,0 +1,79 @@
+[
+  {
+    "ResourceType": "AWS::ECR::Repository",
+    "LogicalResourceId": "ECRRepository",
+    "ResourceIdentifier": {
+      "RepositoryName": "user-bsdxxxx-evl-ecrrepository"
+    }
+  },
+  {
+    "ResourceType": "AWS::ImageBuilder::ImagePipeline",
+    "LogicalResourceId": "ImagePipeline",
+    "ResourceIdentifier": {
+      "Arn": "arn:aws:imagebuilder:ap-northeast-1:443244910989:image-pipeline/user-bsdxxxx-evl-imagepipeline"
+    }
+  },
+  {
+    "ResourceType": "AWS::ImageBuilder::InfrastructureConfiguration",
+    "LogicalResourceId": "InfrastructureConfiguration",
+    "ResourceIdentifier": {
+      "Arn": "arn:aws:imagebuilder:ap-northeast-1:443244910989:infrastructure-configuration/user-bsdxxxx-evl-infrastructureconfiguration"
+    }
+  },
+  {
+    "ResourceType": "AWS::S3::BucketPolicy",
+    "LogicalResourceId": "BucketPolicy",
+    "ResourceIdentifier": {
+      "Bucket": "user-bsdxxxx-evl-screenshot-compare-test"
+    }
+  },
+  {
+    "ResourceType": "AWS::IAM::InstanceProfile",
+    "LogicalResourceId": "ImageBuilderInstanceProfile",
+    "ResourceIdentifier": {
+      "InstanceProfileName": "user-bsdxxxx-evl-ImageBuilderInstanceProfile"
+    }
+  },
+  {
+    "ResourceType": "AWS::S3::Bucket",
+    "LogicalResourceId": "S3Bucket",
+    "ResourceIdentifier": {
+      "BucketName": "user-bsdxxxx-evl-screenshot-compare-test"
+    }
+  },
+  {
+    "ResourceType": "AWS::ImageBuilder::DistributionConfiguration",
+    "LogicalResourceId": "DistributionConfiguration",
+    "ResourceIdentifier": {
+      "Arn": "arn:aws:imagebuilder:ap-northeast-1:443244910989:distribution-configuration/user-bsdxxxx-evl-distributionconfiguration"
+    }
+  },
+  {
+    "ResourceType": "AWS::ImageBuilder::Component",
+    "LogicalResourceId": "CommonComponent",
+    "ResourceIdentifier": {
+      "Arn": "arn:aws:imagebuilder:ap-northeast-1:443244910989:component/user-bsdxxxx-evl-commoncomponent/1.0.0/1"
+    }
+  },
+  {
+    "ResourceType": "AWS::IAM::Role",
+    "LogicalResourceId": "ImageBuilderRole",
+    "ResourceIdentifier": {
+      "RoleName": "user-bsdxxxx-evl-ImageBuilderRole"
+    }
+  },
+  {
+    "ResourceType": "AWS::ImageBuilder::ContainerRecipe",
+    "LogicalResourceId": "ContainerRecipe",
+    "ResourceIdentifier": {
+      "Arn": "arn:aws:imagebuilder:ap-northeast-1:443244910989:container-recipe/user-bsdxxxx-evl-containerrecipe/1.0.2"
+    }
+  },
+  {
+    "ResourceType": "AWS::IAM::Role",
+    "LogicalResourceId": "CodeBuildRole",
+    "ResourceIdentifier": {
+      "RoleName": "user-bsdxxxx-evl-CodeBuildRole"
+    }
+  }
+]

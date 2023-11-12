@@ -1,0 +1,17 @@
+version: 0.2
+
+run-as: Linux-user-name
+
+phases:
+    build:
+        on-failure: ABORT
+        commands:
+        - ./gradlew jar
+artifacts:
+    files:
+    - build/libs/screenshot-comopare-test.jar
+    #discard-paths: no | yes
+    #base-directory: location
+    #exclude-paths: excluded paths
+    #enable-symlinks: no | yes
+    s3-prefix: modules

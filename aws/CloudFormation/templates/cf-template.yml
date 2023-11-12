@@ -1,0 +1,277 @@
+AWSTemplateFormatVersion: "2010-09-09"
+
+Parameters:
+    GitHubToken:
+        Type: String
+        Description: "GitHub personal access token"
+        NoEcho: true
+
+Mappings:
+    Env:
+        "443244910989":
+            Name: evl
+
+Resources:
+
+    # S3
+    # region
+
+    S3Bucket:
+        Type: AWS::S3::Bucket
+        Properties:
+            BucketName: !Sub
+            - user-bsdxxxx-${Env}-screenshot-compare-test
+            - { Env: !FindInMap [ Env, !Ref AWS::AccountId, Name ] }
+            AccessControl: Private
+            BucketEncryption:
+                ServerSideEncryptionConfiguration:
+                -   ServerSideEncryptionByDefault:
+                        SSEAlgorithm: AES256
+            LifecycleConfiguration:
+                Rules:
+                -   Id: MoveToGlacierAndExpire
+                    Status: Enabled
+                    Transitions:
+                    -   TransitionInDays: 30
+                        StorageClass: GLACIER
+                    ExpirationInDays: 365
+                    Prefix: "test_reports/"
+                -   Id: MoveToGlacierAndExpireLogs
+                    Status: Enabled
+                    Transitions:
+                    -   TransitionInDays: 30
+                        StorageClass: GLACIER
+                    ExpirationInDays: 365
+                    Prefix: "logs/"
+            VersioningConfiguration:
+                Status: Enabled
+
+    BucketPolicy:
+        Type: 'AWS::S3::BucketPolicy'
+        Properties:
+            Bucket: !Ref S3Bucket
+            PolicyDocument:
+                Version: '2012-10-17'
+                Statement:
+                -   Sid: IPAllow
+                    Effect: Allow
+                    Principal: '*'
+                    Action:
+                    - s3:GetObject
+                    Resource: !Sub "${S3Bucket.Arn}/test_reports/*"
+                    Condition:
+                        IpAddress:
+                            aws:SourceIp:
+                            - 192.168.11.1
+                            - 192.168.11.2
+
+    # endregion
+
+    # ImageBuilder
+    # region
+
+    ECRRepository:
+        Type: AWS::ECR::Repository
+        Properties:
+            RepositoryName: !Sub
+            - user-bsdxxxx-${Env}-ecrrepository
+            - { Env: !FindInMap [ Env, !Ref AWS::AccountId, Name ] }
+            LifecyclePolicy:
+                LifecyclePolicyText: !Rain::Embed ./cf-packages/ImageBuilder/LifecyclePolicyText.json
+
+    ContainerRecipe:
+        Type: AWS::ImageBuilder::ContainerRecipe
+        Properties:
+            Name: !Sub
+            - user-bsdxxxx-${Env}-ContainerRecipe
+            - { Env: !FindInMap [ Env, !Ref AWS::AccountId, Name ] }
+            Version: 1.0.3
+            ParentImage: !Sub arn:aws:imagebuilder:${AWS::Region}:aws:image/amazon-linux-x86-2/2023.9.23
+            ContainerType: DOCKER
+            DockerfileTemplateData: |-
+                FROM {{{ imagebuilder:parentImage }}}
+                {{{ imagebuilder:environments }}}
+                {{{ imagebuilder:components }}}
+            TargetRepository:
+                RepositoryName: !Ref ECRRepository
+                Service: ECR
+            Components:
+            -   ComponentArn: !Sub arn:aws:imagebuilder:${AWS::Region}:${AWS::AccountId}:component/${Component.Name}/x.x.x
+                Parameters:
+                -   Name: BucketName
+                    Value: [ !Ref S3Bucket ]
+
+    Component:
+        Type: AWS::ImageBuilder::Component
+        Properties:
+            Name: !Sub
+            - user-bsdxxxx-${Env}-component
+            - { Env: !FindInMap [ Env, !Ref AWS::AccountId, Name ] }
+            Version: 1.0.1
+            Platform: Linux
+            Data: !Rain::Embed ./cf-packages/ImageBuilder/Component.yml
+
+    ImageBuilderRole:
+        Type: AWS::IAM::Role
+        Properties:
+            RoleName: !Sub
+            - user-bsdxxxx-${Env}-ImageBuilderRole
+            - { Env: !FindInMap [ Env, !Ref AWS::AccountId, Name ] }
+            AssumeRolePolicyDocument:
+                Version: 2012-10-17
+                Statement:
+                -   Effect: Allow
+                    Principal:
+                        Service:
+                        - ec2.amazonaws.com
+                    Action:
+                    - sts:AssumeRole
+            ManagedPolicyArns:
+            - arn:aws:iam::aws:policy/service-role/AmazonEC2RoleforSSM
+            - arn:aws:iam::aws:policy/AWSImageBuilderReadOnlyAccess
+            - arn:aws:iam::aws:policy/AmazonS3ReadOnlyAccess
+            Policies:
+            -   PolicyName: !Sub
+                - user-bsdxxxx-${Env}-ImageBuilderPolicy
+                - { Env: !FindInMap [ Env, !Ref AWS::AccountId, Name ] }
+                PolicyDocument:
+                    Version: 2012-10-17
+                    Statement:
+                    -   Effect: Allow
+                        Action:
+                        - "ecr:*"
+                        Resource:
+                        - "*"
+
+    ImageBuilderInstanceProfile:
+        Type: AWS::IAM::InstanceProfile
+        Properties:
+            InstanceProfileName: !Sub
+            - user-bsdxxxx-${Env}-ImageBuilderInstanceProfile
+            - { Env: !FindInMap [ Env, !Ref AWS::AccountId, Name ] }
+            Roles:
+            - !Ref ImageBuilderRole
+
+    InfrastructureConfiguration:
+        Type: AWS::ImageBuilder::InfrastructureConfiguration
+        Properties:
+            Name: !Sub
+            - user-bsdxxxx-${Env}-InfrastructureConfiguration
+            - { Env: !FindInMap [ Env, !Ref AWS::AccountId, Name ] }
+            InstanceProfileName: !Ref ImageBuilderInstanceProfile
+            TerminateInstanceOnFailure: true
+            InstanceTypes:
+            - t2.micro
+            Logging:
+                S3Logs:
+                    S3BucketName: !Ref S3Bucket
+                    S3KeyPrefix: /logs/ImageBuilder/
+
+    DistributionConfiguration:
+        Type: AWS::ImageBuilder::DistributionConfiguration
+        Properties:
+            Name: !Sub
+            - user-bsdxxxx-${Env}-DistributionConfiguration
+            - { Env: !FindInMap [ Env, !Ref AWS::AccountId, Name ] }
+            Distributions:
+            -   Region: !Ref AWS::Region
+                ContainerDistributionConfiguration:
+                    ContainerTags:
+                    - latest
+                    TargetRepository:
+                        RepositoryName: !Ref ECRRepository
+                        Service: ECR
+
+    ImagePipeline:
+        Type: AWS::ImageBuilder::ImagePipeline
+        Properties:
+            Name: !Sub
+            - user-bsdxxxx-${Env}-ImagePipeline
+            - { Env: !FindInMap [ Env, !Ref AWS::AccountId, Name ] }
+            ContainerRecipeArn: !Ref ContainerRecipe
+            InfrastructureConfigurationArn: !Ref InfrastructureConfiguration
+            DistributionConfigurationArn: !Ref DistributionConfiguration
+
+    # endregion
+
+    # CodeBuild
+    # region
+
+    CodeBuildRole:
+        Type: AWS::IAM::Role
+        Properties:
+            RoleName: !Sub
+            - user-bsdxxxx-${Env}-CodeBuildRole
+            - { Env: !FindInMap [ Env, !Ref AWS::AccountId, Name ] }
+            AssumeRolePolicyDocument:
+                Version: 2012-10-17
+                Statement:
+                -   Effect: Allow
+                    Principal:
+                        Service:
+                        - codebuild.amazonaws.com
+                    Action:
+                    - sts:AssumeRole
+            Policies:
+            -   PolicyName: !Sub
+                - user-bsdxxxx-${Env}-CodeBuildPolicy
+                - { Env: !FindInMap [ Env, !Ref AWS::AccountId, Name ] }
+                PolicyDocument:
+                    Version: 2012-10-17
+                    Statement:
+                    -   Effect: Allow
+                        Action:
+                        - ecr:GetDownloadUrlForLayer
+                        - ecr:BatchGetImage
+                        - ecr:BatchCheckLayerAvailability
+                        Resource: !GetAtt ECRRepository.Arn
+                    -   Effect: Allow
+                        Action:
+                        - s3:PutObject
+                        Resource: !Sub ${S3Bucket.Arn}/*
+
+    CodeBuildProject:
+        Type: AWS::CodeBuild::Project
+        Properties:
+            Name: !Sub
+            - user-bsdxxxx-${Env}-CodeBuildProject
+            - { Env: !FindInMap [ Env, !Ref AWS::AccountId, Name ] }
+            ServiceRole: !GetAtt CodeBuildRole.Arn
+            Source:
+                Type: GITHUB
+                Auth:
+                    Type: OAUTH
+                    Resource: !Ref GitHubToken
+                Location: https://github.com/yx-saku/gradle-selenium
+            Artifacts:
+                Type: S3
+                Location: !Ref S3Bucket
+                Name: modules
+            Environment:
+                Type: LINUX_CONTAINER
+                ComputeType: BUILD_GENERAL1_SMALL
+                Image: !GetAtt ECRRepository.RepositoryUri
+                EnvironmentVariables:
+                -   Name: PARAMETER_STORE_SECURE_STRING
+                    Value: 'your-ssm-parameter-name'
+                    Type: PARAMETER_STORE
+
+    # endregion
+
+    # Lambda
+
+    # region
+
+    # endregion
+
+    # StepFunctions
+
+    # region
+
+    # endregion
+
+Outputs:
+    S3Bucket:
+        Value: !Ref S3Bucket
+    ImagePipeline:
+        Value: !Ref ImagePipeline
