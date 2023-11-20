@@ -1,0 +1,16 @@
+{
+  "Version":"2012-10-17",
+  "Statement":[
+    {
+      "Sid":"CodeBuildAccess",
+      "Effect":"Allow",
+      "Principal":{
+        "Service":"codebuild.amazonaws.com"
+      },
+      "Action":[
+        "ecr:BatchGetImage",
+        "ecr:GetDownloadUrlForLayer"
+      ]
+    }
+  ]
+}
