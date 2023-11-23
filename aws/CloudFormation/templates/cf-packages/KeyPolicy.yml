@@ -1,0 +1,23 @@
+Version: 2012-10-17
+Statement:
+# ロックアウトを防ぐためルートユーザーに全ての操作を許可
+-   Effect: Allow
+    Action: "kms:*"
+    Resource: "*"
+    Principal:
+        AWS: !Sub arn:aws:iam::${AWS::AccountId}:root
+# ログを暗号化できるようCloudWatchLogsに権限を付与
+-   Effect: Allow
+    Action:
+    - kms:Encrypt
+    - kms:Decrypt
+    - "kms:ReEncrypt*"
+    - "kms:GenerateDataKey*"
+    - kms:DescribeKey
+    Resource: "*"
+    Principal:
+        Service: !Sub logs.${AWS::Region}.amazonaws.com
+        #AWS: !Sub
+        #- arn:aws:iam::${AWS::AccountId}:role/${Role}
+        #- { Role: !FindInMap [ Env, !Ref AWS::AccountId, Role ] }
+        # ↑いらないかも

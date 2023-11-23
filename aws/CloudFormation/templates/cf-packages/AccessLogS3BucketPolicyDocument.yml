@@ -1,0 +1,14 @@
+Version: 2012-10-17
+Statement:
+-   Effect: Allow
+    Action: s3:PutObject
+    Resource: !Sub "${AccessLogS3Bucket.Arn}/s3AccessLog/*"
+    Principal:
+        Service: logging.s3.amazonaws.com
+    Condition:
+        ArnLike:
+            aws:SourceArn:
+            - !GetAtt S3Bucket.Arn
+        StringEquals:
+            aws:SourceAccount:
+            - !Ref AWS::AccountId

@@ -1,0 +1,19 @@
+name: TestAutomationInitDocument
+schemaVersion: 1.0
+
+phases:
+- name: build
+  steps:
+  - name: TestAutomationInitStep
+    action: ExecuteBash
+    onFailure: Abort
+    inputs:
+        commands:
+        # yumアップデートとその他パッケージのインストール
+        - yum update -y
+        - yum install -y zip tar bzip2 unzip
+        # タイムゾーンの設定
+        - yum install -y tzdata
+        - ln -sf /usr/share/zoneinfo/Asia/Tokyo /etc/localtime
+        # 日本語環境のセットアップ
+        - yum install -y glibc-langpack-ja ipa-gothic-fonts

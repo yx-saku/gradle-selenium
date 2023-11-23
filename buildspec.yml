@@ -6,12 +6,10 @@ phases:
         commands:
         - pwd
         - ls -la
-        - ./gradlew jar
+        #- ./gradlew jar
+        - echo aaaa > artifact.txt
 artifacts:
     files:
-    - build/libs/screenshot-comopare-test.jar
-    #discard-paths: no | yes
-    #base-directory: location
-    #exclude-paths: excluded paths
-    #enable-symlinks: no | yes
+    #- build/libs/screenshot-comopare-test.jar
+    - artifact.txt
     s3-prefix: modules

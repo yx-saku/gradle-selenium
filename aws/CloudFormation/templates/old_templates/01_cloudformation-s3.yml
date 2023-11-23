@@ -1,0 +1,108 @@
+# 直すところ
+# ・いろんな権限はリソースポリシー側にまとめた方がいいのでは？（CodeBuildからS3への権限とか）
+# ・権限最小化の見直し
+# ・アクセスログのバケットにログをまとめた方がよくないか？
+# ・「ログ」と言う単位でロググループとスタックまとめる？→微妙かも、考える
+# ・S3とCloudWatchLogs両方にログ出力しているものはCloudWatchLogsに寄せた方が良いのでは？（保存期間も1年にする）
+# ・Component1個でよくない？　もしくはDockerFileにしちゃうか
+# ・JUnitレポートの出力はいらない
+
+
+AWSTemplateFormatVersion: "2010-09-09"
+Transform: AWS::LanguageExtensions
+
+Mappings:
+    Env:
+        "443244910989":
+            Name: evl
+
+Resources:
+    # テストレポートその他を保存するメインのS3バケット
+    S3Bucket:
+        Type: AWS::S3::Bucket
+        Properties:
+            BucketName: !Sub
+            - user-bsdxxxx-${Env}-test-automation
+            - { Env: !FindInMap [ Env, !Ref AWS::AccountId, Name ] }
+            # SSE-S3で暗号化
+            BucketEncryption:
+                ServerSideEncryptionConfiguration:
+                -   BucketKeyEnabled: true
+                    ServerSideEncryptionByDefault:
+                        SSEAlgorithm: AES256
+            # バージョニング有効化
+            VersioningConfiguration:
+                Status: Enabled
+            LifecycleConfiguration:
+                Rules:
+                - # 3ヶ月後にGlacierに移動、1年後に削除
+                    Id: delete-test-reports
+                    Prefix: test-reports/
+                    Fn::Transform: { Name: AWS::Include, Parameters: { Location: !Rain::S3 ../cf-packages/S3LifecycleGracier.yml } }
+                - # 3ヶ月後にGlacierに移動、1年後に削除
+                    Id: delete-old-condebuild-logs
+                    Prefix: logs/CodeBuild/
+                    Fn::Transform: { Name: AWS::Include, Parameters: { Location: !Rain::S3 ../cf-packages/S3LifecycleGracier.yml } }
+                - # 3ヶ月後にGlacierに移動、1年後に削除
+                    Id: delete-old-imagebuilder-logs
+                    Prefix: logs/ImageBuilder/
+                    Fn::Transform: { Name: AWS::Include, Parameters: { Location: !Rain::S3 ../cf-packages/S3LifecycleGracier.yml } }
+                - # Lambda関数から取得したテストケースは1日で削除
+                    Id: delete-temp-testcases
+                    Prefix: temp-testcases/
+                    Status: Enabled
+                    ExpirationInDays: 1
+            LoggingConfiguration:
+                DestinationBucketName: !Ref AccessLogS3Bucket
+                LogFilePrefix: s3AccessLog/
+
+    # メインバケットのバケットポリシー
+    S3BucketPolicy:
+        Type: AWS::S3::BucketPolicy
+        Properties:
+            Bucket: !Ref S3Bucket
+            PolicyDocument:
+              !Rain::Include ../cf-packages/S3BucketPolicyDocument.yml
+
+    # メインバケットへのアクセスログを保管するバケット
+    AccessLogS3Bucket:
+        Type: AWS::S3::Bucket
+        Properties:
+            BucketName: !Sub
+            - user-bsdxxxx-${Env}-access-log
+            - { Env: !FindInMap [ Env, !Ref AWS::AccountId, Name ] }
+            # SSE-S3で暗号化
+            BucketEncryption:
+                ServerSideEncryptionConfiguration:
+                -   BucketKeyEnabled: true
+                    ServerSideEncryptionByDefault:
+                        SSEAlgorithm: AES256
+            # バージョニング有効化
+            VersioningConfiguration:
+                Status: Enabled
+            # ログ配置を許可
+            #AccessControl: LogDeliveryWrite
+            LifecycleConfiguration:
+                Rules:
+                - # 3ヶ月後にGlacierに移動、1年後に削除
+                    Id: delete-access_log
+                    Prefix: s3AccessLog/
+                    Fn::Transform: { Name: AWS::Include, Parameters: { Location: !Rain::S3 ../cf-packages/S3LifecycleGracier.yml } }
+
+    # アクセスログの保存を許可するバケットポリシー
+    AccessLogS3BucketPolicy:
+        Type: AWS::S3::BucketPolicy
+        Properties:
+            Bucket: !Ref AccessLogS3Bucket
+            PolicyDocument:
+              !Rain::Include ../cf-packages/AccessLogS3BucketPolicyDocument.yml
+
+Outputs:
+    S3BucketName:
+        Value: !Ref S3Bucket
+        Export:
+            Name: S3BucketName
+    S3BucketArn:
+        Value: !GetAtt S3Bucket.Arn
+        Export:
+            Name: S3BucketArn

@@ -1,0 +1,126 @@
+AWSTemplateFormatVersion: "2010-09-09"
+
+Parameters:
+    GithubAccessToken:
+        Type: String
+        NoEcho: true
+
+Mappings:
+    Env:
+        "443244910989":
+            Name: evl
+            Role: se
+
+Resources:
+    # CloudWatchLogsを暗号化するキー
+    LogEncryptKey:
+        Type: AWS::KMS::Key
+        Properties:
+            EnableKeyRotation: true
+            KeySpec: SYMMETRIC_DEFAULT
+            KeyPolicy:
+              !Rain::Include ../cf-packages/KeyPolicy.yml
+
+    # キーのエイリアス
+    LogEncryptKeyAlias:
+        Type: AWS::KMS::Alias
+        Properties:
+            AliasName: !Sub
+            - alias/user-bsdxxxx-${Env}-log-encrypt-key
+            - { Env: !FindInMap [ Env, !Ref AWS::AccountId, Name ] }
+            TargetKeyId: !Ref LogEncryptKey
+
+    # CodeBuildの実行ログを出力するロググループ
+    CodeBuildLogGroup:
+        Type: AWS::Logs::LogGroup
+        Properties:
+            KmsKeyId: !GetAtt LogEncryptKey.Arn
+            LogGroupName: !Sub
+            - user-bsdxxxx-${Env}-codebuild-log-group
+            - { Env: !FindInMap [ Env, !Ref AWS::AccountId, Name ] }
+            RetentionInDays: 90
+
+    # テストを実行するCodeBuildProjectのサービスロール
+    CodeBuildServiceRole:
+        Type: AWS::IAM::Role
+        Properties:
+            RoleName: !Sub
+            - user-bsdxxxx-${Env}-codebuild-service-role
+            - { Env: !FindInMap [ Env, !Ref AWS::AccountId, Name ] }
+            Policies:
+            -   PolicyName: !Sub
+                - user-bsdxxxx-${Env}-imagebuilder-codebuild-service-policy
+                - { Env: !FindInMap [ Env, !Ref AWS::AccountId, Name ] }
+                PolicyDocument:
+                  !Rain::Include ../cf-packages/CodeBuildServicePolicy.yml
+            AssumeRolePolicyDocument:
+                Version: 2012-10-17
+                Statement: { Effect: Allow, Action: sts:AssumeRole, Principal: { Service: codebuild.amazonaws.com } }
+            #PermissionsBoundary: !Sub arn:aws:iam::${AWS::AccountId}:policy/bgl-Boundaries-SE
+
+    # Githubからクローンするための認証情報
+    CodeBuildSourceCredential:
+        Type: AWS::CodeBuild::SourceCredential
+        Properties:
+            AuthType: PERSONAL_ACCESS_TOKEN
+            ServerType: GITHUB
+            Token: !Ref GithubAccessToken
+
+    # テストを実行するCodeBuildプロジェクト
+    CodeBuildProject:
+        Type: AWS::CodeBuild::Project
+        Properties:
+            Name: !Sub
+            - user-bsdxxxx-${Env}-build
+            - { Env: !FindInMap [ Env, !Ref AWS::AccountId, Name ] }
+            ServiceRole: !Ref CodeBuildServiceRole
+            # Githubからソースを取得する
+            Source:
+                Type: GITHUB
+                Auth:
+                    Resource: !Ref CodeBuildSourceCredential
+                    Type: OAUTH
+                GitCloneDepth: 1
+                Location: https://github.com/yx-saku/gradle-selenium.git
+            #SourceVersion: main
+            SourceVersion: master
+            # ImageBuilderでビルドしたコンテナイメージを使用する
+            Environment:
+                Image: !Sub
+                - ${ECRRepositoryUri}:TestAutomationContainer
+                - { ECRRepositoryUri: !ImportValue ECRRepositoryUri }
+                Type: LINUX_CONTAINER
+                ImagePullCredentialsType: CODEBUILD
+                ComputeType: BUILD_GENERAL1_SMALL
+                EnvironmentVariables:
+                -   Name: S3_BUCKET
+                    Type: PLAINTEXT
+                    Value: !ImportValue S3BucketName
+            # S3にテストレポート出力
+            Artifacts:
+                Type: S3
+                Location: !ImportValue S3BucketName
+                OverrideArtifactName: true
+                Path: test-reports/
+                EncryptionDisabled: true
+            # CloudWatchLogsとS3にログ出力
+            LogsConfig:
+                CloudWatchLogs:
+                    GroupName: !Ref CodeBuildLogGroup
+                    Status: ENABLED
+                S3Logs:
+                    EncryptionDisabled: false
+                    Location: !Sub
+                    - ${S3BucketArn}/logs/codebuild
+                    - { S3BucketArn: !ImportValue S3BucketArn }
+                    Status: ENABLED
+
+Outputs:
+    CodeBuildProjectName:
+        Value: !Ref CodeBuildProject
+        Export:
+            Name: CodeBuildProjectName
+    LogEncryptKeyArn:
+        Value: !GetAtt LogEncryptKey.Arn
+        Export:
+            Name: LogEncryptKeyArn
