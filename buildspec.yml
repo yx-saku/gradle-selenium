@@ -12,4 +12,4 @@ artifacts:
     files:
     #- build/libs/screenshot-comopare-test.jar
     - artifact.txt
-    s3-prefix: modules
+    s3-prefix: test-reports/
