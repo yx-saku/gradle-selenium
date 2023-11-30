@@ -1,8 +1,0 @@
-Status: Enabled
-Transitions:
--   StorageClass: GLACIER
-    TransitionInDays: 90
-NoncurrentVersionTransitions:
--   StorageClass: GLACIER
-    TransitionInDays: 90
-ExpirationInDays: 366

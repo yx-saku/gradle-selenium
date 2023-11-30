@@ -7,18 +7,18 @@ Statement:
     - s3:ListBucket
     - s3:PutObject
     Resource:
-    - !ImportValue S3BucketArn
-    - !Sub [ "${S3BucketArn}/test-reports/*", { S3BucketArn: !ImportValue S3BucketArn } ]   # テストレポートの出力
-    - !Sub [ "${S3BucketArn}/logs/codebuild/*", { S3BucketArn: !ImportValue S3BucketArn } ] # CodeBuild実行ログ
-    - !Sub [ "${S3BucketArn}/temp-testcases/*", { S3BucketArn: !ImportValue S3BucketArn } ] # Lambda関数から取得したテストケースへのアクセス
-# ロググループの作成とログ出力を許可
--   Effect: Allow
-    Action:
-    - logs:CreateLogStream
-    - logs:PutLogEvents
-    Resource:
-    - !GetAtt CodeBuildLogGroup.Arn
-    #- !Sub "${CodeBuildLogGroup.Arn}:*"
+    - !GetAtt S3Bucket.Arn
+    - !Sub "${S3Bucket.Arn}/test-reports/*"     # テストレポートの出力
+    - !Sub "${S3Bucket.Arn}/logs/codebuild/*"   # CodeBuild実行ログ
+    - !Sub "${S3Bucket.Arn}/temp-testcases/*"   # Lambda関数から取得したテストケースへのアクセス
+## ロググループの作成とログ出力を許可
+#-   Effect: Allow
+#    Action:
+#    - logs:CreateLogStream
+#    - logs:PutLogEvents
+#    Resource:
+#    - !GetAtt CodeBuildLogGroup.Arn
+#    #- !Sub "${CodeBuildLogGroup.Arn}:*"
 ## JUnitテストレポートの出力
 #-   Effect: Allow
 #    Action:

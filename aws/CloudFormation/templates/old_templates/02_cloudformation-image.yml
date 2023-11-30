@@ -23,18 +23,18 @@ Resources:
             # CodeBuildやFargateから使用できるよう許可
             RepositoryPolicyText: !Rain::Embed ../cf-packages/RepositoryPolicyText.json
 
-    # コンテナの初期環境構築を行うコンポーネント
-    InitComponent:
-        Type: AWS::ImageBuilder::Component
-        Properties:
-            Name: !Sub
-            - user-bsdxxxx-${Env}-init-component
-            - { Env: !FindInMap [ Env, !Ref AWS::AccountId, Name ] }
-            Platform: Linux
-            SupportedOsVersions: [ "Amazon Linux 2" ]
-            Version: 1.0.0
-            Uri: !Rain::S3 ../cf-packages/InitComponent.yml
-
+    #    # コンテナの初期環境構築を行うコンポーネント
+    #    InitComponent:
+    #        Type: AWS::ImageBuilder::Component
+    #        Properties:
+    #            Name: !Sub
+    #            - user-bsdxxxx-${Env}-init-component
+    #            - { Env: !FindInMap [ Env, !Ref AWS::AccountId, Name ] }
+    #            Platform: Linux
+    #            SupportedOsVersions: [ "Amazon Linux 2" ]
+    #            Version: 1.0.0
+    #            Uri: !Rain::S3 ../cf-packages/InitComponent.yml
+    #
     #    # Chromeのインストール
     #    ChromeComponent:
     #        Type: AWS::ImageBuilder::Component
@@ -79,17 +79,17 @@ Resources:
             - user-bsdxxxx-${Env}-container-recipe
             - { Env: !FindInMap [ Env, !Ref AWS::AccountId, Name ] }
             Version: 1.0.0
-            ParentImage: amazoncorretto:11
+            ParentImage: !Sub arn:aws:imagebuilder:${AWS::Region}:aws:image/amazon-linux-x86-2/2023.9.23
             ContainerType: DOCKER
             Components:
-            -   ComponentArn: !Sub arn:aws:imagebuilder:${AWS::Region}:${AWS::AccountId}:component/${InitComponent.Name}/x.x.x
+            -   ComponentArn: !Sub arn:aws:imagebuilder:${AWS::Region}:aws:component/amazon-corretto-11/x.x.x
+            #            - ComponentArn: !Sub arn:aws:imagebuilder:${AWS::Region}:${AWS::AccountId}:component/${InitComponent.Name}/x.x.x
             #            - ComponentArn: !Sub arn:aws:imagebuilder:${AWS::Region}:${AWS::AccountId}:component/${ChromeComponent.Name}/x.x.x
             #            - ComponentArn: !Sub arn:aws:imagebuilder:${AWS::Region}:${AWS::AccountId}:component/${FirefoxComponent.Name}/x.x.x
             #            - ComponentArn: !Sub arn:aws:imagebuilder:${AWS::Region}:${AWS::AccountId}:component/${EdgeComponent.Name}/x.x.x
-            DockerfileTemplateData: |
-                FROM {{{ imagebuilder:parentImage }}}
-                {{{ imagebuilder:environments }}}
-                {{{ imagebuilder:components }}}
+            DockerfileTemplateData: !Sub
+            - !Rain::Embed ../cf-packages/DockerFile
+            - { S3BucketName: !ImportValue S3BucketName }
             InstanceConfiguration:
                 BlockDeviceMappings:
                 -   DeviceName: /dev/xvda

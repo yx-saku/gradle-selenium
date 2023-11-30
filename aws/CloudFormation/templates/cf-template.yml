@@ -1,7 +1,8 @@
 AWSTemplateFormatVersion: "2010-09-09"
+Transform: AWS::LanguageExtensions
 
 Parameters:
-    GitHubToken:
+    GithubAccessToken:
         Type: String
         Description: "GitHub personal access token"
         NoEcho: true
@@ -16,179 +17,299 @@ Resources:
     # S3
     # region
 
+    # テストレポートその他を保存するメインのS3バケット
     S3Bucket:
         Type: AWS::S3::Bucket
         Properties:
             BucketName: !Sub
-            - user-bsdxxxx-${Env}-screenshot-compare-test
+            - user-bsdxxxx-${Env}-test-automation
             - { Env: !FindInMap [ Env, !Ref AWS::AccountId, Name ] }
-            AccessControl: Private
+            # SSE-S3で暗号化
             BucketEncryption:
                 ServerSideEncryptionConfiguration:
-                -   ServerSideEncryptionByDefault:
+                -   BucketKeyEnabled: true
+                    ServerSideEncryptionByDefault:
                         SSEAlgorithm: AES256
-            LifecycleConfiguration:
-                Rules:
-                -   Id: MoveToGlacierAndExpire
-                    Status: Enabled
-                    Transitions:
-                    -   TransitionInDays: 30
-                        StorageClass: GLACIER
-                    ExpirationInDays: 365
-                    Prefix: "test_reports/"
-                -   Id: MoveToGlacierAndExpireLogs
-                    Status: Enabled
-                    Transitions:
-                    -   TransitionInDays: 30
-                        StorageClass: GLACIER
-                    ExpirationInDays: 365
-                    Prefix: "logs/"
+            # バージョニング有効化
             VersioningConfiguration:
                 Status: Enabled
+            # アクセスログを別のバケットに保存する
+            LoggingConfiguration:
+                DestinationBucketName: !Ref AccessLogS3Bucket
+                LogFilePrefix: s3AccessLog/
+            LifecycleConfiguration:
+                Rules:
+                -   Id: delete-test-reports
+                    Prefix: test-reports/
+                    Status: Enabled
+                    Transitions:
+                    -   StorageClass: GLACIER
+                        TransitionInDays: 90
+                    NoncurrentVersionTransitions:
+                    -   StorageClass: GLACIER
+                        TransitionInDays: 90
+                    ExpirationInDays: 366
+                -   Id: delete-old-condebuild-logs
+                    Prefix: logs/CodeBuild/
+                    Status: Enabled
+                    Transitions:
+                    -   StorageClass: GLACIER
+                        TransitionInDays: 90
+                    NoncurrentVersionTransitions:
+                    -   StorageClass: GLACIER
+                        TransitionInDays: 90
+                    ExpirationInDays: 366
+                -   Id: delete-old-imagebuilder-logs
+                    Prefix: logs/ImageBuilder/
+                    Status: Enabled
+                    Transitions:
+                    -   StorageClass: GLACIER
+                        TransitionInDays: 90
+                    NoncurrentVersionTransitions:
+                    -   StorageClass: GLACIER
+                        TransitionInDays: 90
+                    ExpirationInDays: 366
+                -   Id: delete-temp-testcases
+                    Prefix: temp-testcases/
+                    Status: Enabled
+                    ExpirationInDays: 1
 
-    BucketPolicy:
-        Type: 'AWS::S3::BucketPolicy'
+    # メインバケットのバケットポリシー
+    S3BucketPolicy:
+        Type: AWS::S3::BucketPolicy
         Properties:
             Bucket: !Ref S3Bucket
             PolicyDocument:
-                Version: '2012-10-17'
+                Version: 2012-10-17
                 Statement:
-                -   Sid: IPAllow
-                    Effect: Allow
-                    Principal: '*'
-                    Action:
-                    - s3:GetObject
-                    Resource: !Sub "${S3Bucket.Arn}/test_reports/*"
+                # 社内からテストレポートへのアクセス許可
+                -   Effect: Allow
+                    Action: s3:GetObject
+                    Resource: !Sub "${S3Bucket.Arn}/test-reports/*/allure-report/*"
+                    Principal: "*"
                     Condition:
                         IpAddress:
                             aws:SourceIp:
-                            - 192.168.11.1
-                            - 192.168.11.2
+                            - 192.168.11.1/32
+
+    # メインバケットへのアクセスログを保管するバケット
+    AccessLogS3Bucket:
+        Type: AWS::S3::Bucket
+        Properties:
+            BucketName: !Sub
+            - user-bsdxxxx-${Env}-access-log
+            - { Env: !FindInMap [ Env, !Ref AWS::AccountId, Name ] }
+            # SSE-S3で暗号化
+            BucketEncryption:
+                ServerSideEncryptionConfiguration:
+                -   BucketKeyEnabled: true
+                    ServerSideEncryptionByDefault:
+                        SSEAlgorithm: AES256
+            # バージョニング有効化
+            VersioningConfiguration:
+                Status: Enabled
+            # ログ配置を許可
+            #AccessControl: LogDeliveryWrite
+            LifecycleConfiguration:
+                Rules:
+                - # 3ヶ月後にGlacierに移動、1年後に削除
+                    Id: delete-access-log
+                    Prefix: s3AccessLog/
+                    Status: Enabled
+                    Transitions:
+                    -   StorageClass: GLACIER
+                        TransitionInDays: 90
+                    NoncurrentVersionTransitions:
+                    -   StorageClass: GLACIER
+                        TransitionInDays: 90
+                    ExpirationInDays: 366
+
+    # アクセスログの保存を許可するバケットポリシー
+    AccessLogS3BucketPolicy:
+        Type: AWS::S3::BucketPolicy
+        Properties:
+            Bucket: !Ref AccessLogS3Bucket
+            PolicyDocument:
+                Version: 2012-10-17
+                Statement:
+                -   Effect: Allow
+                    Principal:
+                        Service: logging.s3.amazonaws.com
+                    Action: s3:PutObject
+                    Resource: !Sub "${AccessLogS3Bucket.Arn}/s3AccessLog/*"
+                    Condition:
+                        ArnLike:
+                            aws:SourceArn: !GetAtt S3Bucket.Arn
+                        StringEquals:
+                            aws:SourceAccount: !Ref AWS::AccountId
 
     # endregion
 
     # ImageBuilder
     # region
 
+    # テストを実行するDockerコンテナイメージを保存するリポジトリ
     ECRRepository:
         Type: AWS::ECR::Repository
         Properties:
             RepositoryName: !Sub
-            - user-bsdxxxx-${Env}-ecrrepository
+            - user-bsdxxxx-${Env}-ecr-repository
             - { Env: !FindInMap [ Env, !Ref AWS::AccountId, Name ] }
+            # 不要なイメージを保存しないよう1つのみ保存する
             LifecyclePolicy:
                 LifecyclePolicyText: !Rain::Embed ./cf-packages/LifecyclePolicyText.json
+            # CodeBuildやFargateから使用できるよう許可
             RepositoryPolicyText: !Rain::Embed ./cf-packages/RepositoryPolicyText.json
 
+    # コンテナの初期環境構築を行うコンポーネント
+    InitComponent:
+        Type: AWS::ImageBuilder::Component
+        Properties:
+            Name: !Sub
+            - user-bsdxxxx-${Env}-init-component
+            - { Env: !FindInMap [ Env, !Ref AWS::AccountId, Name ] }
+            Platform: Linux
+            SupportedOsVersions: [ "Amazon Linux 2" ]
+            Version: 1.0.0
+            Uri: !Rain::S3 ./cf-packages/InitComponent.yml
+
+    #    # Chromeのインストール
+    #    ChromeComponent:
+    #        Type: AWS::ImageBuilder::Component
+    #        Properties:
+    #            Name: !Sub
+    #            - user-bsdxxxx-${Env}-chrome-component
+    #            - { Env: !FindInMap [Env, !Ref AWS::AccountId, Name] }
+    #            Platform: Linux
+    #            SupportedOsVersions: ["Amazon Linux 2"]
+    #            Version: 1.0.0
+    #            Uri: !Rain::S3 ./cf-packages/ChromeComponent.yml
+    #
+    #    # Firefoxのインストール
+    #    FirefoxComponent:
+    #        Type: AWS::ImageBuilder::Component
+    #        Properties:
+    #            Name: !Sub
+    #            - user-bsdxxxx-${Env}-firefox-component
+    #            - { Env: !FindInMap [Env, !Ref AWS::AccountId, Name] }
+    #            Platform: Linux
+    #            SupportedOsVersions: ["Amazon Linux 2"]
+    #            Version: 1.0.0
+    #            Uri: !Rain::S3 ./cf-packages/FirefoxComponent.yml
+    #
+    #    # Edgeのインストール
+    #    EdgeComponent:
+    #        Type: AWS::ImageBuilder::Component
+    #        Properties:
+    #            Name: !Sub
+    #            - user-bsdxxxx-${Env}-edge-component
+    #            - { Env: !FindInMap [ Env, !Ref AWS::AccountId, Name ] }
+    #            Platform: Linux
+    #            SupportedOsVersions: [ "Amazon Linux 2" ]
+    #            Version: 1.0.0
+    #            Uri: !Rain::S3 ./cf-packages/EdgeComponent.yml
+
+    # コンテナレシピ
     ContainerRecipe:
         Type: AWS::ImageBuilder::ContainerRecipe
         Properties:
             Name: !Sub
-            - user-bsdxxxx-${Env}-ContainerRecipe
+            - user-bsdxxxx-${Env}-container-recipe
             - { Env: !FindInMap [ Env, !Ref AWS::AccountId, Name ] }
-            Version: 1.0.4
+            Version: 1.0.0
             ParentImage: !Sub arn:aws:imagebuilder:${AWS::Region}:aws:image/amazon-linux-x86-2/2023.9.23
             ContainerType: DOCKER
-            DockerfileTemplateData: |-
+            Components:
+            -   ComponentArn: !Sub arn:aws:imagebuilder:${AWS::Region}:${AWS::AccountId}:component/${InitComponent.Name}/x.x.x
+            #            - ComponentArn: !Sub arn:aws:imagebuilder:${AWS::Region}:${AWS::AccountId}:component/${ChromeComponent.Name}/x.x.x
+            #            - ComponentArn: !Sub arn:aws:imagebuilder:${AWS::Region}:${AWS::AccountId}:component/${FirefoxComponent.Name}/x.x.x
+            #            - ComponentArn: !Sub arn:aws:imagebuilder:${AWS::Region}:${AWS::AccountId}:component/${EdgeComponent.Name}/x.x.x
+            DockerfileTemplateData: |
                 FROM {{{ imagebuilder:parentImage }}}
                 {{{ imagebuilder:environments }}}
                 {{{ imagebuilder:components }}}
+            InstanceConfiguration:
+                BlockDeviceMappings:
+                -   DeviceName: /dev/xvda
+                    Ebs:
+                        DeleteOnTermination: true
+                        VolumeSize: 30
             TargetRepository:
                 RepositoryName: !Ref ECRRepository
                 Service: ECR
-            Components:
-            -   ComponentArn: !Sub arn:aws:imagebuilder:${AWS::Region}:aws:component/amazon-corretto-11/x.x.x
-            -   ComponentArn: !Sub arn:aws:imagebuilder:${AWS::Region}:${AWS::AccountId}:component/${Component.Name}/x.x.x
-                Parameters:
-                -   Name: BucketName
-                    Value: [ !Ref S3Bucket ]
 
-    Component:
-        Type: AWS::ImageBuilder::Component
-        Properties:
-            Name: !Sub
-            - user-bsdxxxx-${Env}-component
-            - { Env: !FindInMap [ Env, !Ref AWS::AccountId, Name ] }
-            Version: 1.0.2
-            Platform: Linux
-            Data: !Rain::Embed ./cf-packages/Component.yml
-
-    ImageBuilderRole:
+    # コンテナイメージをビルドするインスタンスのロール
+    ImageBuilderInstanceProfileRole:
         Type: AWS::IAM::Role
         Properties:
             RoleName: !Sub
-            - user-bsdxxxx-${Env}-ImageBuilderRole
+            - user-bsdxxxx-${Env}-imagebuilder-instance-profile-role
             - { Env: !FindInMap [ Env, !Ref AWS::AccountId, Name ] }
-            AssumeRolePolicyDocument:
-                Version: 2012-10-17
-                Statement:
-                -   Effect: Allow
-                    Principal:
-                        Service:
-                        - ec2.amazonaws.com
-                    Action:
-                    - sts:AssumeRole
             ManagedPolicyArns:
-            - arn:aws:iam::aws:policy/service-role/AmazonEC2RoleforSSM
-            - arn:aws:iam::aws:policy/AWSImageBuilderReadOnlyAccess
-            - arn:aws:iam::aws:policy/AmazonS3ReadOnlyAccess
+            - arn:aws:iam::aws:policy/EC2InstanceProfileForImageBuilderECRContainerBuilds
+            - arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore
             Policies:
             -   PolicyName: !Sub
-                - user-bsdxxxx-${Env}-ImageBuilderPolicy
+                - user-bsdxxxx-${Env}-imagebuilder-instance-profile-policy
                 - { Env: !FindInMap [ Env, !Ref AWS::AccountId, Name ] }
                 PolicyDocument:
-                    Version: 2012-10-17
-                    Statement:
-                    -   Effect: Allow
-                        Action:
-                        - "ecr:*"
-                        Resource:
-                        - "*"
+                  !Rain::Include ./cf-packages/ImageBuilderInstanceProfilePolicy.yml
+            AssumeRolePolicyDocument:
+                Version: 2012-10-17
+                Statement: { Effect: Allow, Action: sts:AssumeRole, Principal: { Service: ec2.amazonaws.com } }
+            #PermissionsBoundary: !Sub arn:aws:iam::${AWS::AccountId}:policy/bgl-Boundaries-SE
 
+    # コンテナイメージをビルドするインスタンスのインスタンスプロファイル
     ImageBuilderInstanceProfile:
         Type: AWS::IAM::InstanceProfile
         Properties:
             InstanceProfileName: !Sub
-            - user-bsdxxxx-${Env}-ImageBuilderInstanceProfile
+            - user-bsdxxxx-${Env}-imagebuilder-instance-profile
             - { Env: !FindInMap [ Env, !Ref AWS::AccountId, Name ] }
             Roles:
-            - !Ref ImageBuilderRole
+            - !Ref ImageBuilderInstanceProfileRole
 
+    # コンテナイメージをビルドするインスタンス設定
     InfrastructureConfiguration:
         Type: AWS::ImageBuilder::InfrastructureConfiguration
         Properties:
             Name: !Sub
-            - user-bsdxxxx-${Env}-InfrastructureConfiguration
+            - user-bsdxxxx-${Env}-infrastructure-configuration
             - { Env: !FindInMap [ Env, !Ref AWS::AccountId, Name ] }
             InstanceProfileName: !Ref ImageBuilderInstanceProfile
-            TerminateInstanceOnFailure: true
             InstanceTypes:
             - t2.micro
             Logging:
                 S3Logs:
                     S3BucketName: !Ref S3Bucket
-                    S3KeyPrefix: /logs/ImageBuilder/
+                    S3KeyPrefix: logs/imageBuilder
+    #            SubnetId: !FindInMap [Env, !Ref AWS::AccountId, InfrastructureConfigurationSubnetId]
+    #            SecurityGroupIds:
+    #            - !FindInMap [Env, !Ref AWS::AccountId, InfrastructureConfigurationSecurityGroupId]
 
+    # コンテナイメージの配付設定
     DistributionConfiguration:
         Type: AWS::ImageBuilder::DistributionConfiguration
         Properties:
             Name: !Sub
-            - user-bsdxxxx-${Env}-DistributionConfiguration
+            - user-bsdxxxx-${Env}-distribution-configuration
             - { Env: !FindInMap [ Env, !Ref AWS::AccountId, Name ] }
             Distributions:
             -   Region: !Ref AWS::Region
                 ContainerDistributionConfiguration:
-                    ContainerTags:
-                    - latest
+                    # タグを付加してECRリポジトリに保存
                     TargetRepository:
                         RepositoryName: !Ref ECRRepository
                         Service: ECR
+                    ContainerTags:
+                    - TestAutomationContainer
 
+    # イメージパイプライン
     ImagePipeline:
         Type: AWS::ImageBuilder::ImagePipeline
         Properties:
             Name: !Sub
-            - user-bsdxxxx-${Env}-ImagePipeline
+            - user-bsdxxxx-${Env}-image-pipeline
             - { Env: !FindInMap [ Env, !Ref AWS::AccountId, Name ] }
             ContainerRecipeArn: !Ref ContainerRecipe
             InfrastructureConfigurationArn: !Ref InfrastructureConfiguration
@@ -198,155 +319,195 @@ Resources:
 
     # CodeBuild
     # region
+    # CloudWatchLogsを暗号化するキー
+    LogEncryptKey:
+        Type: AWS::KMS::Key
+        Properties:
+            EnableKeyRotation: true
+            KeySpec: SYMMETRIC_DEFAULT
+            KeyPolicy:
+              !Rain::Include ./cf-packages/KeyPolicy.yml
 
-    CodeBuildRole:
+    # キーのエイリアス
+    LogEncryptKeyAlias:
+        Type: AWS::KMS::Alias
+        Properties:
+            AliasName: !Sub
+            - alias/user-bsdxxxx-${Env}-log-encrypt-key
+            - { Env: !FindInMap [ Env, !Ref AWS::AccountId, Name ] }
+            TargetKeyId: !Ref LogEncryptKey
+
+    # CodeBuildの実行ログを出力するロググループ
+    CodeBuildLogGroup:
+        Type: AWS::Logs::LogGroup
+        Properties:
+            KmsKeyId: !GetAtt LogEncryptKey.Arn
+            LogGroupName: !Sub
+            - user-bsdxxxx-${Env}-codebuild-log-group
+            - { Env: !FindInMap [ Env, !Ref AWS::AccountId, Name ] }
+            RetentionInDays: 90
+
+    # テストを実行するCodeBuildProjectのサービスロール
+    CodeBuildServiceRole:
         Type: AWS::IAM::Role
         Properties:
             RoleName: !Sub
-            - user-bsdxxxx-${Env}-CodeBuildRole
+            - user-bsdxxxx-${Env}-codebuild-service-role
             - { Env: !FindInMap [ Env, !Ref AWS::AccountId, Name ] }
-            AssumeRolePolicyDocument:
-                Version: 2012-10-17
-                Statement:
-                -   Effect: Allow
-                    Principal:
-                        Service:
-                        - codebuild.amazonaws.com
-                    Action:
-                    - sts:AssumeRole
             Policies:
             -   PolicyName: !Sub
-                - user-bsdxxxx-${Env}-CodeBuildPolicy
+                - user-bsdxxxx-${Env}-imagebuilder-codebuild-service-policy
                 - { Env: !FindInMap [ Env, !Ref AWS::AccountId, Name ] }
                 PolicyDocument:
-                    Version: 2012-10-17
-                    Statement:
-                    -   Effect: Allow
-                        Action:
-                        - s3:PutObject
-                        Resource: !Sub ${S3Bucket.Arn}/*
-                    -   Effect: Allow
-                        Action:
-                        - logs:CreateLogStream
-                        - logs:CreateLogGroup
-                        Resource: '*'
+                  !Rain::Include ./cf-packages/CodeBuildServicePolicy.yml
+            AssumeRolePolicyDocument:
+                Version: 2012-10-17
+                Statement: { Effect: Allow, Action: sts:AssumeRole, Principal: { Service: codebuild.amazonaws.com } }
+            #PermissionsBoundary: !Sub arn:aws:iam::${AWS::AccountId}:policy/bgl-Boundaries-SE
 
-    CodeBuildProject:
-        Type: AWS::CodeBuild::Project
-        Properties:
-            Name: !Sub
-            - user-bsdxxxx-${Env}-CodeBuildProject
-            - { Env: !FindInMap [ Env, !Ref AWS::AccountId, Name ] }
-            ServiceRole: !GetAtt CodeBuildRole.Arn
-            Source:
-                Auth:
-                    Type: OAUTH
-                    Resource: !Ref CodeBuildSourceCredential
-                Type: GITHUB
-                Location: https://github.com/yx-saku/gradle-selenium
-            Artifacts:
-                Type: S3
-                Location: !Ref S3Bucket
-                Name: modules
-            Environment:
-                Type: LINUX_CONTAINER
-                ComputeType: BUILD_GENERAL1_SMALL
-                Image: !Sub ${ECRRepository.RepositoryUri}:latest
-                #EnvironmentVariables:
-                #-   Name: PARAMETER_STORE_SECURE_STRING
-                #    Value: 'your-ssm-parameter-name'
-                #    Type: PARAMETER_STORE
-
+    # Githubからクローンするための認証情報
     CodeBuildSourceCredential:
         Type: AWS::CodeBuild::SourceCredential
         Properties:
             AuthType: PERSONAL_ACCESS_TOKEN
             ServerType: GITHUB
-            Token: !Ref GitHubToken
+            Token: !Ref GithubAccessToken
+
+    # テストを実行するCodeBuildプロジェクト
+    CodeBuildProject:
+        Type: AWS::CodeBuild::Project
+        Properties:
+            Name: !Sub
+            - user-bsdxxxx-${Env}-build
+            - { Env: !FindInMap [ Env, !Ref AWS::AccountId, Name ] }
+            ServiceRole: !Ref CodeBuildServiceRole
+            # Githubからソースを取得する
+            Source:
+                Type: GITHUB
+                Auth:
+                    Resource: !Ref CodeBuildSourceCredential
+                    Type: OAUTH
+                GitCloneDepth: 1
+                Location: https://github.com/yx-saku/gradle-selenium.git
+            #SourceVersion: main
+            SourceVersion: master
+            # ImageBuilderでビルドしたコンテナイメージを使用する
+            Environment:
+                Image: !Sub ${ECRRepository.RepositoryUri}:TestAutomationContainer
+                Type: LINUX_CONTAINER
+                ImagePullCredentialsType: CODEBUILD
+                ComputeType: BUILD_GENERAL1_SMALL
+                EnvironmentVariables:
+                -   Name: S3_BUCKET
+                    Type: PLAINTEXT
+                    Value: !Ref S3Bucket
+            # S3にテストレポート出力
+            Artifacts:
+                Type: S3
+                Location: !Ref S3Bucket
+                OverrideArtifactName: true
+                Path: test-reports/
+                EncryptionDisabled: true
+            # CloudWatchLogsとS3にログ出力
+            LogsConfig:
+                CloudWatchLogs:
+                    GroupName: !Ref CodeBuildLogGroup
+                    Status: ENABLED
+                S3Logs:
+                    EncryptionDisabled: false
+                    Location: !Sub ${S3Bucket.Arn}/logs/codebuild
+                    Status: ENABLED
 
     # endregion
 
     # Fargate
     # region
 
-#    ECSCluster:
-#        Type: 'AWS::ECS::Cluster'
-#
-#    ECSTaskDefinition:
-#        Type: 'AWS::ECS::TaskDefinition'
-#        Properties:
-#            Family: 'my-ecs-task'
-#            Cpu: '256'
-#            Memory: '512'
-#            NetworkMode: 'awsvpc'
-#            RequiresCompatibilities:
-#            - 'FARGATE'
-#            ExecutionRoleArn: !Ref ECSExecutionRole
-#            ContainerDefinitions:
-#            -   Name: 'my-container'
-#                Image: !Sub '${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/${ECRRepositoryName}:${ImageTag}'
-#                PortMappings:
-#                -   ContainerPort: 80
-#                LogConfiguration:
-#                    LogDriver: 'awslogs'
-#                    Options:
-#                        awslogs-group: 'my-ecs-logs'
-#                        awslogs-region: !Ref 'AWS::Region'
-#                        awslogs-stream-prefix: 'ecs'
-#
-#    FargateService:
-#        Type: 'AWS::ECS::Service'
-#        DependsOn: 'ECSTaskDefinition'
-#        Properties:
-#            Cluster: !Ref 'ECSCluster'
-#            LaunchType: 'FARGATE'
-#            TaskDefinition: !Ref 'ECSTaskDefinition'
-#            DesiredCount: 1
-#            NetworkConfiguration:
-#                AwsvpcConfiguration:
-#                    Subnets:
-#                    - 'subnet-xxxxxx'  # Replace with your subnet ID
-#                    SecurityGroups:
-#                    - 'sg-xxxxxx'      # Replace with your security group ID
-#                    AssignPublicIp: 'ENABLED'
-#
-#    ECSExecutionRole:
-#        Type: 'AWS::IAM::Role'
-#        Properties:
-#            AssumeRolePolicyDocument:
-#                Version: '2012-10-17'
-#                Statement:
-#                -   Effect: 'Allow'
-#                    Principal:
-#                        Service: 'ecs-tasks.amazonaws.com'
-#                    Action: 'sts:AssumeRole'
-#            Policies:
-#            -   PolicyName: 'ecsExecutionPolicy'
-#                PolicyDocument:
-#                    Version: '2012-10-17'
-#                    Statement:
-#                    -   Effect: 'Allow'
-#                        Action:
-#                        - 'ecr:GetAuthorizationToken'
-#                        - 'ecr:BatchCheckLayerAvailability'
-#                        - 'ecr:GetDownloadUrlForLayer'
-#                        - 'ecr:BatchGetImage'
-#                        - 'logs:CreateLogStream'
-#                        - 'logs:PutLogEvents'
-#                        Resource: '*'
-    # endregion
+    ECSCluster:
+        Type: 'AWS::ECS::Cluster'
+        Properties:
+            ClusterName: !Sub
+            - user-bsdxxxx-${Env}-fargate-cluster
+            - { Env: !FindInMap [ Env, !Ref AWS::AccountId, Name ] }
 
+    ECSExecutionRole:
+        Type: 'AWS::IAM::Role'
+        Properties:
+            RoleName: !Sub
+            - user-bsdxxxx-${Env}-ecs-execution-role
+            - { Env: !FindInMap [ Env, !Ref AWS::AccountId, Name ] }
+            AssumeRolePolicyDocument:
+                Version: '2012-10-17'
+                Statement:
+                -   Effect: 'Allow'
+                    Principal:
+                        Service: 'ecs-tasks.amazonaws.com'
+                    Action: 'sts:AssumeRole'
+            Policies:
+            -   PolicyName: !Sub
+                - user-bsdxxxx-${Env}-ecs-execution-policy
+                - { Env: !FindInMap [ Env, !Ref AWS::AccountId, Name ] }
+                PolicyDocument:
+                    Version: '2012-10-17'
+                    Statement:
+                    -   Effect: 'Allow'
+                        Action:
+                        - 'ecr:GetAuthorizationToken'
+                        - 'ecr:BatchCheckLayerAvailability'
+                        - 'ecr:GetDownloadUrlForLayer'
+                        - 'ecr:BatchGetImage'
+                        - 'logs:CreateLogStream'
+                        - 'logs:PutLogEvents'
+                        Resource: '*'
 
-    # Lambda
+    FargateLogGroup:
+        Type: AWS::Logs::LogGroup
+        Properties:
+            LogGroupName: !Sub
+            - user-bsdxxxx-${Env}-fargate-log-group
+            - { Env: !FindInMap [ Env, !Ref AWS::AccountId, Name ] }
+            RetentionInDays: 90
 
-    # region
+    FargateTaskDefinition:
+        Type: 'AWS::ECS::TaskDefinition'
+        Properties:
+            Family: 'ScreenshotCompareTest'
+            Cpu: '512'
+            Memory: '4096'
+            NetworkMode: 'awsvpc'   # 実行モードがFARGATEの場合はawsvpcのみ
+            RequiresCompatibilities:
+            - 'FARGATE'
+            ExecutionRoleArn: !Ref ECSExecutionRole
+            ContainerDefinitions:
+            -   Name: 'ScreenshotCompareTestExecTestContainer'
+                Image: !Sub ${ECRRepository.RepositoryUri}:latest
+                LogConfiguration:
+                    LogDriver: awslogs
+                    Options:
+                        awslogs-region: !Ref AWS::Region
+                        awslogs-group: !Ref FargateLogGroup
+                        awslogs-stream-prefix: ScreenshotCompareTest
+                Command:
+                - echo
+                - from fargate!!!!
 
-    # endregion
-
-    # StepFunctions
-
-    # region
-
+    FargateService:
+        Type: 'AWS::ECS::Service'
+        Properties:
+            ServiceName: !Sub
+            - user-bsdxxxx-${Env}-fargate-service
+            - { Env: !FindInMap [ Env, !Ref AWS::AccountId, Name ] }
+            Cluster: !Ref 'ECSCluster'
+            LaunchType: 'FARGATE'
+            TaskDefinition: !Ref 'FargateTaskDefinition'
+            DesiredCount: 0
+            NetworkConfiguration:
+                AwsvpcConfiguration:
+                    AssignPublicIp: ENABLED
+                    Subnets:
+                    - subnet-bf8ec1e4
+                    SecurityGroups:
+                    - sg-bd73acc6
     # endregion
 
 Outputs:

@@ -1,0 +1,18 @@
+Version: 2012-10-17
+Statement:
+-   Effect: Allow
+    Action:
+    - s3:PutObject
+    Resource:
+    - !Sub "${S3Bucket.Arn}/temp-testcase/*"
+-   Effect: Allow
+    Action:
+    - logs:CreateLogGroup
+    Resource:
+    - !Sub "arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:*"
+-   Effect: Allow
+    Action:
+    - logs:CreateLogStream
+    - logs:PutLogEvents
+    Resource:
+    - !Sub arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/user-bsd343

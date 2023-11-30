@@ -31,14 +31,11 @@ Resources:
             TargetKeyId: !Ref LogEncryptKey
 
     # CodeBuildの実行ログを出力するロググループ
-    CodeBuildLogGroup:
-        Type: AWS::Logs::LogGroup
+    CodeBuildLogGroupAndPolicy:
+        Type: BBB::Logs::LogGroupAndPolicy::MODULE
         Properties:
-            KmsKeyId: !GetAtt LogEncryptKey.Arn
-            LogGroupName: !Sub
-            - user-bsdxxxx-${Env}-codebuild-log-group
-            - { Env: !FindInMap [ Env, !Ref AWS::AccountId, Name ] }
-            RetentionInDays: 90
+            Name: codebuild
+            LogEncryptKeyArn: !GetAtt LogEncryptKey.Arn
 
     # テストを実行するCodeBuildProjectのサービスロール
     CodeBuildServiceRole:
@@ -47,6 +44,8 @@ Resources:
             RoleName: !Sub
             - user-bsdxxxx-${Env}-codebuild-service-role
             - { Env: !FindInMap [ Env, !Ref AWS::AccountId, Name ] }
+            ManagedPolicyArns:
+            - !GetAtt CodeBuildLogGroupAndPolicy.PutLogPolicy.Arn
             Policies:
             -   PolicyName: !Sub
                 - user-bsdxxxx-${Env}-imagebuilder-codebuild-service-policy
@@ -106,7 +105,7 @@ Resources:
             # CloudWatchLogsとS3にログ出力
             LogsConfig:
                 CloudWatchLogs:
-                    GroupName: !Ref CodeBuildLogGroup
+                    GroupName: !Ref CodeBuildLogGroupAndPolicy.LogGroup
                     Status: ENABLED
                 S3Logs:
                     EncryptionDisabled: false

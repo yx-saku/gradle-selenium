@@ -18,6 +18,8 @@ phases:
         action: ExecuteBash
         inputs:
             commands:
+            # CmdExecution: Stderr: /bin/bash: - : invalid option /bin/bash: - : invalid option /bin/bash: - : invalid option
+            # のエラーが出た場合はshellファイルの改行コードをLFにする
             - chmod +x /tmp/installBrowser.sh
             - /tmp/installBrowser.sh chrome
             - /tmp/installBrowser.sh firefox

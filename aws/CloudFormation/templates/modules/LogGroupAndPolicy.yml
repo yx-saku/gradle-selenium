@@ -1,0 +1,39 @@
+# CloudWatchLogsのロググループとそのロググループへのログ出力を許可するポリシーを作成する
+
+AWSTemplateFormatVersion: 2010-09-09
+
+Parameters:
+    Name:
+        Type: String
+    LogEncryptKeyArn:
+        Type: String
+
+Mappings:
+    Env:
+        "443244910989":
+            Name: evl
+Resources:
+    PutLogPolicy:
+        Type: AWS::IAM::Policy
+        Properties:
+            PolicyName: !Sub
+            - user-bsdxxxx-${Env}-${Name}-policy
+            - { Env: !FindInMap [ Env, !Ref AWS::AccountId, Name ] }
+            PolicyDocument:
+                Version: 2012-10-17
+                Statement:
+                -   Effect: Allow
+                    Action:
+                    - logs:CreateLogStream
+                    - logs:PutLogEvents
+                    Resource:
+                    - !GetAtt LogGroup.Arn
+
+    LogGroup:
+        Type: AWS::Logs::LogGroup
+        Properties:
+            KmsKeyId: !Ref LogEncryptKeyArn
+            LogGroupName: !Sub
+            - user-bsdxxxx-${Env}-${Name}-loggroup
+            - { Env: !FindInMap [ Env, !Ref AWS::AccountId, Name ] }
+            RetentionInDays: 90

@@ -24,25 +24,25 @@ for s in $@; do
 
     rm -rf "$SHELL_PATH/tmp-template.json"
 done
-
-function delete_tree_stack(){
-    local STACK_NAME=$1
-
-    local EXPORTS=$(aws cloudformation describe-stacks --stack-name $STACK_NAME 2> /dev/null | jq -rb ".Stacks[].Outputs[].ExportName")
-    for ex in $EXPORTS; do
-        local IMPORT_STACKS=$(aws cloudformation list-imports --export-name $ex 2> /dev/null | jq -rb ".Imports[]")
-        for i in $IMPORT_STACKS; do
-            delete_tree_stack $i
-        done
-    done
-
-    rain rm $STACK_NAME -y
-}
-
-for s in $@; do
-    if [ "$(existsStack $s)" != "true" ]; then
-        continue
-    fi
-
-    delete_tree_stack $s
-done
+#
+#function delete_tree_stack(){
+#    local STACK_NAME=$1
+#
+#    local EXPORTS=$(aws cloudformation describe-stacks --stack-name $STACK_NAME 2> /dev/null | jq -rb ".Stacks[].Outputs[].ExportName")
+#    for ex in $EXPORTS; do
+#        local IMPORT_STACKS=$(aws cloudformation list-imports --export-name $ex 2> /dev/null | jq -rb ".Imports[]")
+#        for i in $IMPORT_STACKS; do
+#            delete_tree_stack $i
+#        done
+#    done
+#
+#    rain rm $STACK_NAME -y
+#}
+#
+#for s in $@; do
+#    if [ "$(existsStack $s)" != "true" ]; then
+#        continue
+#    fi
+#
+#    delete_tree_stack $s
+#done

@@ -1,15 +1,19 @@
 # 直すところ
 # ・いろんな権限はリソースポリシー側にまとめた方がいいのでは？（CodeBuildからS3への権限とか）
 # ・権限最小化の見直し
-# ・アクセスログのバケットにログをまとめた方がよくないか？
-# ・「ログ」と言う単位でロググループとスタックまとめる？→微妙かも、考える
-# ・S3とCloudWatchLogs両方にログ出力しているものはCloudWatchLogsに寄せた方が良いのでは？（保存期間も1年にする）
+# →ロールはそんなにキツキツじゃなくていいのでは
 # ・Component1個でよくない？　もしくはDockerFileにしちゃうか
 # ・JUnitレポートの出力はいらない
+# ・S3とCloudWatchLogs両方にログ出力しているものはCloudWatchLogsに寄せた方が良いのでは？（保存期間も1年にする）
+# ・アクセスログのバケットにログをまとめた方がよくないか？→変更コスト高そう
+# ・「ログ」と言う単位でロググループとスタックまとめる？→微妙かも、考える
 
+# これは諦める
+# ・繰り返しプロパティの共通化　ForEachとか　よっぽとはまるケース以外は諦める
+# ・コンポーネントバージョンの自動更新
+# ・テンプレートを1個にまとめる→変更コスト高そう
 
 AWSTemplateFormatVersion: "2010-09-09"
-Transform: AWS::LanguageExtensions
 
 Mappings:
     Env:
@@ -38,15 +42,36 @@ Resources:
                 - # 3ヶ月後にGlacierに移動、1年後に削除
                     Id: delete-test-reports
                     Prefix: test-reports/
-                    Fn::Transform: { Name: AWS::Include, Parameters: { Location: !Rain::S3 ../cf-packages/S3LifecycleGracier.yml } }
+                    Status: Enabled
+                    Transitions:
+                    -   StorageClass: GLACIER
+                        TransitionInDays: 90
+                    NoncurrentVersionTransitions:
+                    -   StorageClass: GLACIER
+                        TransitionInDays: 90
+                    ExpirationInDays: 366
                 - # 3ヶ月後にGlacierに移動、1年後に削除
                     Id: delete-old-condebuild-logs
                     Prefix: logs/CodeBuild/
-                    Fn::Transform: { Name: AWS::Include, Parameters: { Location: !Rain::S3 ../cf-packages/S3LifecycleGracier.yml } }
+                    Status: Enabled
+                    Transitions:
+                    -   StorageClass: GLACIER
+                        TransitionInDays: 90
+                    NoncurrentVersionTransitions:
+                    -   StorageClass: GLACIER
+                        TransitionInDays: 90
+                    ExpirationInDays: 366
                 - # 3ヶ月後にGlacierに移動、1年後に削除
                     Id: delete-old-imagebuilder-logs
                     Prefix: logs/ImageBuilder/
-                    Fn::Transform: { Name: AWS::Include, Parameters: { Location: !Rain::S3 ../cf-packages/S3LifecycleGracier.yml } }
+                    Status: Enabled
+                    Transitions:
+                    -   StorageClass: GLACIER
+                        TransitionInDays: 90
+                    NoncurrentVersionTransitions:
+                    -   StorageClass: GLACIER
+                        TransitionInDays: 90
+                    ExpirationInDays: 366
                 - # Lambda関数から取得したテストケースは1日で削除
                     Id: delete-temp-testcases
                     Prefix: temp-testcases/
@@ -62,7 +87,17 @@ Resources:
         Properties:
             Bucket: !Ref S3Bucket
             PolicyDocument:
-              !Rain::Include ../cf-packages/S3BucketPolicyDocument.yml
+                Version: 2012-10-17
+                Statement:
+                # 社内からテストレポートへのアクセス許可
+                -   Effect: Allow
+                    Action: s3:GetObject
+                    Resource: !Sub "${S3Bucket.Arn}/test-reports/*/allure-report/*"
+                    Principal: "*"
+                    Condition:
+                        IpAddress:
+                            aws:SourceIp:
+                            - 192.168.11.1/32
 
     # メインバケットへのアクセスログを保管するバケット
     AccessLogS3Bucket:
@@ -85,9 +120,16 @@ Resources:
             LifecycleConfiguration:
                 Rules:
                 - # 3ヶ月後にGlacierに移動、1年後に削除
-                    Id: delete-access_log
+                    Id: delete-access-log
                     Prefix: s3AccessLog/
-                    Fn::Transform: { Name: AWS::Include, Parameters: { Location: !Rain::S3 ../cf-packages/S3LifecycleGracier.yml } }
+                    Status: Enabled
+                    Transitions:
+                    -   StorageClass: GLACIER
+                        TransitionInDays: 90
+                    NoncurrentVersionTransitions:
+                    -   StorageClass: GLACIER
+                        TransitionInDays: 90
+                    ExpirationInDays: 366
 
     # アクセスログの保存を許可するバケットポリシー
     AccessLogS3BucketPolicy:
@@ -95,7 +137,18 @@ Resources:
         Properties:
             Bucket: !Ref AccessLogS3Bucket
             PolicyDocument:
-              !Rain::Include ../cf-packages/AccessLogS3BucketPolicyDocument.yml
+                Version: 2012-10-17
+                Statement:
+                -   Effect: Allow
+                    Principal:
+                        Service: logging.s3.amazonaws.com
+                    Action: s3:PutObject
+                    Resource: !Sub "${AccessLogS3Bucket.Arn}/s3AccessLog/*"
+                    Condition:
+                        ArnLike:
+                            aws:SourceArn: !GetAtt S3Bucket.Arn
+                        StringEquals:
+                            aws:SourceAccount: !Ref AWS::AccountId
 
 Outputs:
     S3BucketName:
