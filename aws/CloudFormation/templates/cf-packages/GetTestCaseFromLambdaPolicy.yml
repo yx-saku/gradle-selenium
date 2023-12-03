@@ -4,7 +4,7 @@ Statement:
     Action:
     - s3:PutObject
     Resource:
-    - !Sub "${S3Bucket.Arn}/temp-testcase/*"
+    - !Sub [ "${S3BucketArn}/temp-testcase/*", { S3BucketArn: !ImportValue S3BucketArn } ]
 -   Effect: Allow
     Action:
     - logs:CreateLogGroup

@@ -13,14 +13,15 @@ case $1 in
 #            --s3-bucket $CF_S3_BUCKET \
 #            --yes
 
-        aws s3 sync "$SHELL_PATH/CloudFormation/templates/modules" s3://$CF_S3_BUCKET/modules
-        REGISTRATION_TOKEN=$(aws cloudformation register-type --type MODULE \
-            --type-name BBB::Logs::LogGroupAndPolicy::MODULE \
-            --schema-handler-package s3://$CF_S3_BUCKET/modules/LogGroupAndPolicy.yml |
-            jq -r ".RegistrationToken")
+        cd "$SHELL_PATH/CloudFormation/templates"
 
-        echo $REGISTRATION_TOKEN
-        aws cloudformation wait type-registration-complete --registration-token $REGISTRATION_TOKEN
+        mkdir -p ./modules/tmp
+        cd ./modules/tmp
+        cfn init --force --artifact-type MODULE --type-name BBBBBBB::Logs::LogGroupAndPolicy::MODULE
+        rm ./fragments/sample.json
+
+        cat ../LogGroupAndPolicy.yml | rain fmt --json > ./fragments/LogGroupAndPolicy.json
+        cfn submit
 
         DIR="$SHELL_PATH/CloudFormation/templates/old_templates"
         rain deploy "$DIR/01_cloudformation-s3.yml" user-bsdxxxx-evl-s3 --s3-bucket user-bsdxxxx-evl-cf-packages --yes

@@ -32,7 +32,7 @@ Resources:
 
     # CodeBuildの実行ログを出力するロググループ
     CodeBuildLogGroupAndPolicy:
-        Type: BBB::Logs::LogGroupAndPolicy::MODULE
+        Type: BBBBBBB::Logs::LogGroupAndPolicy::MODULE
         Properties:
             Name: codebuild
             LogEncryptKeyArn: !GetAtt LogEncryptKey.Arn
