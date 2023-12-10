@@ -1,12 +1,17 @@
 AWSTemplateFormatVersion: "2010-09-09"
 Transform: AWS::LanguageExtensions
 
+Parameters:
+    ImageTag:
+        Type: String
+        Default: latest
+
 Mappings:
     Env:
         "443244910989":
             Name: evl
-            InfrastructureConfigurationSubnetId: aaa
-            InfrastructureConfigurationSecurityGroupId: aaa
+            InfrastructureConfigurationSubnetId: subnet-bf8ec1e4
+            InfrastructureConfigurationSecurityGroupId: sg-bd73acc6
 
 Resources:
 
@@ -19,57 +24,9 @@ Resources:
             - { Env: !FindInMap [ Env, !Ref AWS::AccountId, Name ] }
             # 不要なイメージを保存しないよう1つのみ保存する
             LifecyclePolicy:
-                LifecyclePolicyText: !Rain::Embed ../cf-packages/LifecyclePolicyText.json
+                LifecyclePolicyText: !Rain::Embed ./files/LifecyclePolicyText.json
             # CodeBuildやFargateから使用できるよう許可
-            RepositoryPolicyText: !Rain::Embed ../cf-packages/RepositoryPolicyText.json
-
-    #    # コンテナの初期環境構築を行うコンポーネント
-    #    InitComponent:
-    #        Type: AWS::ImageBuilder::Component
-    #        Properties:
-    #            Name: !Sub
-    #            - user-bsdxxxx-${Env}-init-component
-    #            - { Env: !FindInMap [ Env, !Ref AWS::AccountId, Name ] }
-    #            Platform: Linux
-    #            SupportedOsVersions: [ "Amazon Linux 2" ]
-    #            Version: 1.0.0
-    #            Uri: !Rain::S3 ../cf-packages/InitComponent.yml
-    #
-    #    # Chromeのインストール
-    #    ChromeComponent:
-    #        Type: AWS::ImageBuilder::Component
-    #        Properties:
-    #            Name: !Sub
-    #            - user-bsdxxxx-${Env}-chrome-component
-    #            - { Env: !FindInMap [Env, !Ref AWS::AccountId, Name] }
-    #            Platform: Linux
-    #            SupportedOsVersions: ["Amazon Linux 2"]
-    #            Version: 1.0.0
-    #            Uri: !Rain::S3 ../cf-packages/ChromeComponent.yml
-    #
-    #    # Firefoxのインストール
-    #    FirefoxComponent:
-    #        Type: AWS::ImageBuilder::Component
-    #        Properties:
-    #            Name: !Sub
-    #            - user-bsdxxxx-${Env}-firefox-component
-    #            - { Env: !FindInMap [Env, !Ref AWS::AccountId, Name] }
-    #            Platform: Linux
-    #            SupportedOsVersions: ["Amazon Linux 2"]
-    #            Version: 1.0.0
-    #            Uri: !Rain::S3 ../cf-packages/FirefoxComponent.yml
-    #
-    #    # Edgeのインストール
-    #    EdgeComponent:
-    #        Type: AWS::ImageBuilder::Component
-    #        Properties:
-    #            Name: !Sub
-    #            - user-bsdxxxx-${Env}-edge-component
-    #            - { Env: !FindInMap [ Env, !Ref AWS::AccountId, Name ] }
-    #            Platform: Linux
-    #            SupportedOsVersions: [ "Amazon Linux 2" ]
-    #            Version: 1.0.0
-    #            Uri: !Rain::S3 ../cf-packages/EdgeComponent.yml
+            RepositoryPolicyText: !Rain::Embed ./files/RepositoryPolicyText.json
 
     # コンテナレシピ
     ContainerRecipe:
@@ -78,17 +35,13 @@ Resources:
             Name: !Sub
             - user-bsdxxxx-${Env}-container-recipe
             - { Env: !FindInMap [ Env, !Ref AWS::AccountId, Name ] }
-            Version: 1.0.0
+            Version: 1.0.9
             ParentImage: !Sub arn:aws:imagebuilder:${AWS::Region}:aws:image/amazon-linux-x86-2/2023.9.23
             ContainerType: DOCKER
             Components:
             -   ComponentArn: !Sub arn:aws:imagebuilder:${AWS::Region}:aws:component/amazon-corretto-11/x.x.x
-            #            - ComponentArn: !Sub arn:aws:imagebuilder:${AWS::Region}:${AWS::AccountId}:component/${InitComponent.Name}/x.x.x
-            #            - ComponentArn: !Sub arn:aws:imagebuilder:${AWS::Region}:${AWS::AccountId}:component/${ChromeComponent.Name}/x.x.x
-            #            - ComponentArn: !Sub arn:aws:imagebuilder:${AWS::Region}:${AWS::AccountId}:component/${FirefoxComponent.Name}/x.x.x
-            #            - ComponentArn: !Sub arn:aws:imagebuilder:${AWS::Region}:${AWS::AccountId}:component/${EdgeComponent.Name}/x.x.x
             DockerfileTemplateData: !Sub
-            - !Rain::Embed ../cf-packages/DockerFile
+            - !Rain::Embed ./files/DockerFile
             - { S3BucketName: !ImportValue S3BucketName }
             InstanceConfiguration:
                 BlockDeviceMappings:
@@ -109,16 +62,34 @@ Resources:
             - { Env: !FindInMap [ Env, !Ref AWS::AccountId, Name ] }
             ManagedPolicyArns:
             - arn:aws:iam::aws:policy/EC2InstanceProfileForImageBuilderECRContainerBuilds
-            - arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore
+            - arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore  # TODO 厳密化する？
             Policies:
             -   PolicyName: !Sub
                 - user-bsdxxxx-${Env}-imagebuilder-instance-profile-policy
                 - { Env: !FindInMap [ Env, !Ref AWS::AccountId, Name ] }
                 PolicyDocument:
-                  !Rain::Include ../cf-packages/ImageBuilderInstanceProfilePolicy.yml
+                    Version: 2012-10-17
+                    Statement:
+                    -   Effect: Allow
+                        Action: s3:PutObject
+                        Resource: !Sub
+                        - "${S3BucketArn}/logs/imageBuilder/*"
+                        - { S3BucketArn: !ImportValue S3BucketArn }
+                    -   Effect: Allow
+                        Action: s3:GetObject
+                        Resource: !Sub
+                        - "${S3BucketArn}/modules/*"
+                        - { S3BucketArn: !ImportValue S3BucketArn }
+                    -   Effect: Allow
+                        Action: s3:ListBucket
+                        Resource: !ImportValue S3BucketArn
             AssumeRolePolicyDocument:
                 Version: 2012-10-17
-                Statement: { Effect: Allow, Action: sts:AssumeRole, Principal: { Service: ec2.amazonaws.com } }
+                Statement:
+                    Effect: Allow
+                    Principal:
+                        Service: ec2.amazonaws.com
+                    Action: sts:AssumeRole
             #PermissionsBoundary: !Sub arn:aws:iam::${AWS::AccountId}:policy/bgl-Boundaries-SE
 
     # コンテナイメージをビルドするインスタンスのインスタンスプロファイル
@@ -145,9 +116,9 @@ Resources:
                 S3Logs:
                     S3BucketName: !ImportValue S3BucketName
                     S3KeyPrefix: logs/imageBuilder
-    #            SubnetId: !FindInMap [Env, !Ref AWS::AccountId, InfrastructureConfigurationSubnetId]
-    #            SecurityGroupIds:
-    #            - !FindInMap [Env, !Ref AWS::AccountId, InfrastructureConfigurationSecurityGroupId]
+            SubnetId: !FindInMap [ Env, !Ref AWS::AccountId, InfrastructureConfigurationSubnetId ]
+            SecurityGroupIds:
+            - !FindInMap [ Env, !Ref AWS::AccountId, InfrastructureConfigurationSecurityGroupId ]
 
     # コンテナイメージの配付設定
     DistributionConfiguration:
@@ -164,7 +135,7 @@ Resources:
                         RepositoryName: !Ref ECRRepository
                         Service: ECR
                     ContainerTags:
-                    - TestAutomationContainer
+                    - !Ref ImageTag
 
     # イメージパイプライン
     ImagePipeline:
@@ -186,3 +157,7 @@ Outputs:
         Value: !Ref ImagePipeline
         Export:
             Name: ImagePipelineArn
+    ImageTag:
+        Value: !Ref ImageTag
+        Export:
+            Name: ImageTag

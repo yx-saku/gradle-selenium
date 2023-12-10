@@ -19,7 +19,25 @@ Resources:
             EnableKeyRotation: true
             KeySpec: SYMMETRIC_DEFAULT
             KeyPolicy:
-              !Rain::Include ../cf-packages/KeyPolicy.yml
+                Version: 2012-10-17
+                Statement:
+                # ロックアウトを防ぐためルートユーザーに全ての操作を許可
+                -   Effect: Allow
+                    Action: "kms:*"
+                    Resource: "*"
+                    Principal:
+                        AWS: !Sub arn:aws:iam::${AWS::AccountId}:root
+                # ログを暗号化できるようCloudWatchLogsに権限を付与
+                -   Effect: Allow
+                    Action:
+                    - kms:Encrypt
+                    - kms:Decrypt
+                    - "kms:ReEncrypt*"
+                    - "kms:GenerateDataKey*"
+                    - kms:DescribeKey
+                    Resource: "*"
+                    Principal:
+                        Service: !Sub logs.${AWS::Region}.amazonaws.com
 
     # キーのエイリアス
     LogEncryptKeyAlias:
@@ -30,32 +48,41 @@ Resources:
             - { Env: !FindInMap [ Env, !Ref AWS::AccountId, Name ] }
             TargetKeyId: !Ref LogEncryptKey
 
-    # CodeBuildの実行ログを出力するロググループ
-    CodeBuildLogGroupAndPolicy:
-        Type: BBBBBBB::Logs::LogGroupAndPolicy::MODULE
-        Properties:
-            Name: codebuild
-            LogEncryptKeyArn: !GetAtt LogEncryptKey.Arn
-
     # テストを実行するCodeBuildProjectのサービスロール
     CodeBuildServiceRole:
         Type: AWS::IAM::Role
         Properties:
             RoleName: !Sub
-            - user-bsdxxxx-${Env}-codebuild-service-role
+            - user-bsdxxxx-${Env}-codebuild-role
             - { Env: !FindInMap [ Env, !Ref AWS::AccountId, Name ] }
-            ManagedPolicyArns:
-            - !GetAtt CodeBuildLogGroupAndPolicy.PutLogPolicy.Arn
             Policies:
             -   PolicyName: !Sub
-                - user-bsdxxxx-${Env}-imagebuilder-codebuild-service-policy
+                - user-bsdxxxx-${Env}-codebuild-policy
                 - { Env: !FindInMap [ Env, !Ref AWS::AccountId, Name ] }
                 PolicyDocument:
-                  !Rain::Include ../cf-packages/CodeBuildServicePolicy.yml
+                    Version: 2012-10-17
+                    Statement:
+                    -   Effect: Allow
+                        Action: s3:PutObject
+                        Resource: !Sub
+                        - "${S3BucketArn}/modules/*"
+                        - { S3BucketArn: !ImportValue S3BucketArn }
             AssumeRolePolicyDocument:
                 Version: 2012-10-17
-                Statement: { Effect: Allow, Action: sts:AssumeRole, Principal: { Service: codebuild.amazonaws.com } }
+                Statement:
+                    Effect: Allow
+                    Principal:
+                        Service: codebuild.amazonaws.com
+                    Action: sts:AssumeRole
             #PermissionsBoundary: !Sub arn:aws:iam::${AWS::AccountId}:policy/bgl-Boundaries-SE
+
+    # CodeBuildの実行ログを出力するロググループ
+    CodeBuildLogGroupAndPolicy:
+        Type: BBBBBBB::Logs::LogGroupAndPolicy::MODULE
+        Properties:
+            Name: codebuild
+            RoleName: !Ref CodeBuildServiceRole
+            LogEncryptKeyArn: !GetAtt LogEncryptKey.Arn
 
     # Githubからクローンするための認証情報
     CodeBuildSourceCredential:
@@ -70,7 +97,7 @@ Resources:
         Type: AWS::CodeBuild::Project
         Properties:
             Name: !Sub
-            - user-bsdxxxx-${Env}-build
+            - user-bsdxxxx-${Env}-build-jar
             - { Env: !FindInMap [ Env, !Ref AWS::AccountId, Name ] }
             ServiceRole: !Ref CodeBuildServiceRole
             # Githubからソースを取得する
@@ -86,8 +113,11 @@ Resources:
             # ImageBuilderでビルドしたコンテナイメージを使用する
             Environment:
                 Image: !Sub
-                - ${ECRRepositoryUri}:TestAutomationContainer
-                - { ECRRepositoryUri: !ImportValue ECRRepositoryUri }
+                - ${ECRRepositoryUri}:${ImageTag}
+                - {
+                    ECRRepositoryUri: !ImportValue ECRRepositoryUri,
+                    ImageTag: !ImportValue ImageTag
+                }
                 Type: LINUX_CONTAINER
                 ImagePullCredentialsType: CODEBUILD
                 ComputeType: BUILD_GENERAL1_SMALL
@@ -98,9 +128,9 @@ Resources:
             # S3にテストレポート出力
             Artifacts:
                 Type: S3
+                Name: modules
                 Location: !ImportValue S3BucketName
-                OverrideArtifactName: true
-                Path: test-reports/
+                NamespaceType: NONE
                 EncryptionDisabled: true
             # CloudWatchLogsとS3にログ出力
             LogsConfig:
@@ -119,6 +149,10 @@ Outputs:
         Value: !Ref CodeBuildProject
         Export:
             Name: CodeBuildProjectName
+    CodeBuildProjectArn:
+        Value: !GetAtt CodeBuildProject.Arn
+        Export:
+            Name: CodeBuildProjectArn
     LogEncryptKeyArn:
         Value: !GetAtt LogEncryptKey.Arn
         Export:

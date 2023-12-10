@@ -1,7 +1,10 @@
 # CloudWatchLogsのロググループとそのロググループへのログ出力を許可するポリシーを作成する
+AWSTemplateFormatVersion: "2010-09-09"
 
 Parameters:
     Name:
+        Type: String
+    RoleName:
         Type: String
     LogEncryptKeyArn:
         Type: String
@@ -16,7 +19,7 @@ Resources:
         Type: AWS::IAM::Policy
         Properties:
             PolicyName: !Sub
-            - user-bsdxxxx-${Env}-${Name}-policy
+            - user-bsdxxxx-${Env}-${Name}-loggroup-policy
             - { Env: !FindInMap [ Env, !Ref AWS::AccountId, Name ] }
             PolicyDocument:
                 Version: 2012-10-17
@@ -27,6 +30,8 @@ Resources:
                     - logs:PutLogEvents
                     Resource:
                     - !GetAtt LogGroup.Arn
+            Roles:
+            - !Ref RoleName
 
     LogGroup:
         Type: AWS::Logs::LogGroup

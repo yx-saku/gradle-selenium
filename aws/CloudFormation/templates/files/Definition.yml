@@ -1,0 +1,14 @@
+StartAt: テスト実行
+States:
+    テスト実行:
+        Type: Task
+        Resource: arn:aws:states:::ecs:runTask.sync
+        Parameters:
+            LaunchType: FARGATE
+            Cluster: ${ECSClusterArn}
+            TaskDefinition: ${TaskDefinitionArn}
+            Overrides:
+                ContainerOverrides:
+                -   Name: ScreenshotCompareTestExecTestContainer
+                    Command.$: States.Array($$.Excution.Input.Browser, $$.Excution.Input.TestCase)
+        End: true

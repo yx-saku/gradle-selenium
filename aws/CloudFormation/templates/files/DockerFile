@@ -1,0 +1,32 @@
+FROM {{{ imagebuilder:parentImage }}}
+{{{ imagebuilder:environments }}}
+{{{ imagebuilder:components }}}
+
+# yumアップデートとその他パッケージのインストール
+RUN yum update -y && \
+    yum install -y zip tar bzip2 unzip
+
+# タイムゾーンの設定
+RUN yum install -y tzdata && \
+    ln -sf /usr/share/zoneinfo/Asia/Tokyo /etc/localtime
+
+# 日本語環境のセットアップ
+RUN yum install -y glibc-langpack-ja ipa-gothic-fonts
+
+# AWS CLIのインストール
+RUN curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip" && \
+    unzip awscliv2.zip && \
+    ./aws/install
+
+WORKDIR ~
+RUN whoami
+RUN pwd
+
+# ブラウザをインストール
+RUN aws s3 sync s3://${S3BucketName}/modules/scripts ./scripts && \
+    chmod +x ./scripts/*.sh && \
+    ./scripts/installBrowser.sh chrome && \
+    ./scripts/installBrowser.sh firefox && \
+    ./scripts/installBrowser.sh edge
+
+#ENTRYPOINT [ "./scripts/runTest.sh", "${S3BucketName}" ]

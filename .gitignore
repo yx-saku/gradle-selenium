@@ -9,4 +9,7 @@ allure-results
 .vagrant
 screenshot
 
-aws/CloudFormation/import_scripts/test
+# cfn auto generate files
+aws/CloudFormation/modules/*/schema.json
+aws/CloudFormation/modules/*/rpdk.log
+aws/CloudFormation/modules/*/*.zip

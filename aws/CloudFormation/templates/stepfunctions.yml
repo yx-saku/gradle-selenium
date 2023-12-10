@@ -1,0 +1,109 @@
+AWSTemplateFormatVersion: "2010-09-09"
+
+Mappings:
+    Env:
+        "443244910989":
+            Name: evl
+            Role: se
+
+Resources:
+    StepFunctionsRole:
+        Type: AWS::IAM::Role
+        Properties:
+            RoleName: !Sub
+            - user-bsdxxxx-${Env}-stepfunctions-role
+            - { Env: !FindInMap [ Env, !Ref AWS::AccountId, Name ] }
+            Policies:
+            -   PolicyName: !Sub
+                - user-bsdxxxx-${Env}-stepfunctions-policy
+                - { Env: !FindInMap [ Env, !Ref AWS::AccountId, Name ] }
+                PolicyDocument:
+                    Version: 2012-10-17
+                    Statement:
+                    # Fargateタスク実行
+                    -   Effect: Allow
+                        Action: ecs:RunTask
+                        Resource: !ImportValue FargateTaskDefinitionArn
+                        #-   Effect: Allow
+                        #    Action:
+                        #    - lambda:InvokeFunction
+                        #    Resource:
+                        #    -
+                        #
+            #                    # ImageBuilderパイプライン実行
+            #                    -   Effect: Allow
+            #                        Action: imagebuilder:StartImagePipelineExecution
+            #                        Resource: !ImportValue ImagePipelineArn
+            #                    # S3バケット参照
+            #                    -   Effect: Allow
+            #                        Action: s3:GetObject
+            #                        Resource: !ImportValue S3BucketArn
+            #                    # メール送信
+            #                    -   Effect: Allow
+            #                        Action: ses:SendEmail
+            #                        Resource: !Sub "arn:aws:ses:${AWS::Region}:${AWS::AccountId}:identity/*"
+            #                    # パラメータストア参照
+            #                    -   Effect: Allow
+            #                        Action: ssm:GetParameter
+            #                        Resource: !Sub "arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/*"   # TODO 厳密化できそう
+            AssumeRolePolicyDocument:
+                Version: 2012-10-17
+                Statement:
+                -   Effect: Allow
+                    Principal:
+                        Service: !Sub states.${AWS::Region}.amazonaws.com
+                    Action: sts:AssumeRole
+
+    StepFunctionsLogGroupAndPolicy:
+        Type: BBBBBBB::Logs::LogGroupAndPolicy::MODULE
+        Properties:
+            Name: stepfunctions
+            RoleName: !Ref StepFunctionsRole
+            LogEncryptKeyArn: !ImportValue LogEncryptKeyArn
+
+    StepFunctionsStateMachine:
+        Type: AWS::StepFunctions::StateMachine
+        Properties:
+            StateMachineType: STANDARD
+            StateMachineName: !Sub
+            - user-bsdxxxx-${Env}-exec-test-flow
+            - { Env: !FindInMap [ Env, !Ref AWS::AccountId, Name ] }
+            RoleArn: !GetAtt StepFunctionsRole.Arn
+            LoggingConfiguration:
+                Destinations:
+                -   CloudWatchLogsLogGroup:
+                        LogGroupArn: !GetAtt StepFunctionsLogGroupAndPolicy.LogGroup.Arn
+                IncludeExecutionData: true
+                Level: ALL
+            DefinitionS3Location: !Rain::S3
+                Path: ./files/Definition.yml
+                BucketProperty: Bucket
+                KeyProperty: Key
+            DefinitionSubstitutions:
+                ECSClusterArn: !ImportValue ECSClusterArn
+                TaskDefinitionArn: !ImportValue FargateTaskDefinitionArn
+
+
+    InvokeStateMachineForEventBridgeRole:
+        Type: AWS::IAM::Role
+        Properties:
+            RoleName: !Sub
+            - user-bsdxxxx-${Env}-invoke-statemachine-for-eventbridge-role
+            - { Env: !FindInMap [ Env, !Ref AWS::AccountId, Name ] }
+            Policies:
+            -   PolicyName: !Sub
+                - user-bsdxxxx-${Env}-invoke-statemachine-for-eventbridge-policy
+                - { Env: !FindInMap [ Env, !Ref AWS::AccountId, Name ] }
+                PolicyDocument:
+                    Version: 2012-10-17
+                    Statement:
+                    -   Effect: Allow
+                        Action: states:StartExecution
+                        Resource: !GetAtt StepFunctionsStateMachine.Arn
+            AssumeRolePolicyDocument:
+                Version: 2012-10-17
+                Statement:
+                -   Effect: Allow
+                    Principal:
+                        Service: events.amazonaws.com
+                    Action: sts:AssumeRole

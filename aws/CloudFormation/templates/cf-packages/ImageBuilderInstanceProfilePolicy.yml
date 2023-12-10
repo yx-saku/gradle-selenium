@@ -1,8 +1,0 @@
-Version: 2012-10-17
-Statement:
--   Effect: Allow
-    Action:
-    - s3:PutObject
-    Resource: !Sub
-    - "${S3BucketArn}/logs/imageBuilder/*"
-    - { S3BucketArn: !ImportValue S3BucketArn }

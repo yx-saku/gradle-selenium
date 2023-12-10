@@ -1,5 +1,9 @@
 #!/bin/bash -e
 
+export ENV=evl
+export CF_S3_BUCKET=user-bsdxxxx-${ENV}-cf-templates
+export RAIN_S3_PREFIX=rain-artifacts
+
 function existsStack() {
     local STACK_NAME=$1
 

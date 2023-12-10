@@ -1,0 +1,111 @@
+AWSTemplateFormatVersion: "2010-09-09"
+
+Mappings:
+    Env:
+        "443244910989":
+            Name: evl
+
+Resources:
+    # 証跡を保存するS3バケット
+    CloudTrailS3Bucket:
+        Type: AWS::S3::Bucket
+        Properties:
+            BucketName: !Sub
+            - user-bsdxxxx-${Env}-cloudtrail
+            - { Env: !FindInMap [ Env, !Ref AWS::AccountId, Name ] }
+            # SSE-S3で暗号化
+            BucketEncryption:
+                ServerSideEncryptionConfiguration:
+                -   BucketKeyEnabled: true
+                    ServerSideEncryptionByDefault:
+                        SSEAlgorithm: AES256
+            # 公開設定
+            PublicAccessBlockConfiguration:
+                BlockPublicAcls: true
+                BlockPublicPolicy: true
+                IgnorePublicAcls: true
+                RestrictPublicBuckets: true
+            # バージョニング有効化
+            VersioningConfiguration:
+                Status: Enabled
+            LifecycleConfiguration:
+                Rules:
+                - # 3ヶ月後にGlacierに移動、1年後に削除
+                    Id: delete-cloudtrail-logs
+                    Prefix: /AWSLogs
+                    Status: Enabled
+                    Transitions:
+                    -   StorageClass: GLACIER
+                        TransitionInDays: 90
+                    NoncurrentVersionTransitions:
+                    -   StorageClass: GLACIER
+                        TransitionInDays: 90
+                    ExpirationInDays: 366
+
+    # バケットポリシー
+    CloudTrailS3BucketPolicy:
+        Type: AWS::S3::BucketPolicy
+        Properties:
+            Bucket: !Ref CloudTrailS3Bucket
+            PolicyDocument:
+                Version: 2012-10-17
+                Statement:
+                -   Effect: Allow
+                    Principal:
+                        Service: cloudtrail.amazonaws.com
+                    Action: s3:GetBucketAcl
+                    Resource: !GetAtt CloudTrailS3Bucket.Arn
+                    Condition:
+                        StringEquals:
+                            AWS:SourceArn: !Sub arn:aws:cloudtrail:${AWS::Region}:${AWS::AccountId}:trail/user-bsdxxxx-evl-cloudtrail
+                -   Effect: Allow
+                    Principal:
+                        Service: cloudtrail.amazonaws.com
+                    Action: s3:PutObject
+                    Resource: !Sub "${CloudTrailS3Bucket.Arn}/AWSLogs/${AWS::AccountId}/*"
+                    Condition:
+                        StringEquals:
+                            AWS:SourceArn: !Sub arn:aws:cloudtrail:${AWS::Region}:${AWS::AccountId}:trail/user-bsdxxxx-evl-cloudtrail
+                            s3:x-amz-acl: bucket-owner-full-control
+
+    CloudTrailRole:
+        Type: AWS::IAM::Role
+        Properties:
+            RoleName: !Sub
+            - user-bsdxxxx-${Env}-cloudtrail-role
+            - { Env: !FindInMap [ Env, !Ref AWS::AccountId, Name ] }
+            AssumeRolePolicyDocument:
+                Version: 2012-10-17
+                Statement:
+                    Effect: Allow
+                    Principal:
+                        Service: cloudtrail.amazonaws.com
+                    Action: sts:AssumeRole
+            #PermissionsBoundary: !Sub arn:aws:iam::${AWS::AccountId}:policy/bgl-Boundaries-SE
+
+    CloudTrailLogGroupAndPolicy:
+        Type: BBBBBBB::Logs::LogGroupAndPolicy::MODULE
+        Properties:
+            Name: cloudtrail
+            RoleName: !Ref CloudTrailRole
+            LogEncryptKeyArn: !ImportValue LogEncryptKeyArn
+
+    CloudTrail:
+        Type: AWS::CloudTrail::Trail
+        DependsOn: CloudTrailS3BucketPolicy
+        Properties:
+            TrailName: !Sub
+            - user-bsdxxxx-${Env}-cloudtrail
+            - { Env: !FindInMap [ Env, !Ref AWS::AccountId, Name ] }
+            S3BucketName: !Ref CloudTrailS3Bucket
+            EventSelectors:
+            -   DataResources:
+                -   Type: AWS::S3::Object
+                    Values:
+                    - arn:aws:s3
+            IsMultiRegionTrail: true
+            IsOrganizationTrail: false
+            IsLogging: true
+            IncludeGlobalServiceEvents: true
+            CloudWatchLogsLogGroupArn: !GetAtt CloudTrailLogGroupAndPolicy.LogGroup.Arn
+            CloudWatchLogsRoleArn: !GetAtt CloudTrailRole.Arn

@@ -4,13 +4,8 @@ phases:
     build:
         on-failure: ABORT
         commands:
-        - pwd
-        - ls -la
         - ./gradlew jar
-        #- echo aaaa > artifact.txt
 artifacts:
+    discard-paths: yes
     files:
-    - build/libs/screenshot-comopare-test.jar
-    - artifact.txt
-    #s3-prefix: test-reports/
-    s3-prefix: modules/
+    - ./app/build/libs/screenshot-compare-test.jar

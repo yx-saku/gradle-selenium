@@ -1,0 +1,104 @@
+AWSTemplateFormatVersion: "2010-09-09"
+
+Mappings:
+    Env:
+        "443244910989":
+            Name: evl
+            InfrastructureConfigurationSubnetId: subnet-bf8ec1e4
+            InfrastructureConfigurationSecurityGroupId: sg-bd73acc6
+
+Resources:
+    ECSCluster:
+        Type: AWS::ECS::Cluster
+        Properties:
+            ClusterName: !Sub
+            - user-bsdxxxx-${Env}-fargate-cluster
+            - { Env: !FindInMap [ Env, !Ref AWS::AccountId, Name ] }
+
+    ECSExecutionRole:
+        Type: AWS::IAM::Role
+        Properties:
+            RoleName: !Sub
+            - user-bsdxxxx-${Env}-fargate-role
+            - { Env: !FindInMap [ Env, !Ref AWS::AccountId, Name ] }
+            Policies:
+            -   PolicyName: !Sub
+                - user-bsdxxxx-${Env}-fargate-policy
+                - { Env: !FindInMap [ Env, !Ref AWS::AccountId, Name ] }
+                PolicyDocument:
+                    Version: 2012-10-17
+                    Statement:
+                    -   Effect: Allow
+                        Action:
+                        - ecr:GetAuthorizationToken
+                        - ecr:BatchCheckLayerAvailability
+                        - ecr:GetDownloadUrlForLayer
+                        - ecr:BatchGetImage
+                        Resource: '*'   # TODO 厳密化する
+            AssumeRolePolicyDocument:
+                Version: 2012-10-17
+                Statement:
+                -   Effect: Allow
+                    Principal:
+                        Service: ecs-tasks.amazonaws.com
+                    Action: sts:AssumeRole
+
+    FargateLogGroupAndPolicy:
+        Type: BBBBBBB::Logs::LogGroupAndPolicy::MODULE
+        Properties:
+            Name: fargate
+            RoleName: !Ref ECSExecutionRole
+            LogEncryptKeyArn: !ImportValue LogEncryptKeyArn
+
+    FargateTaskDefinition:
+        Type: AWS::ECS::TaskDefinition
+        Properties:
+            Family: ScreenshotCompareTest
+            Cpu: 512
+            Memory: 4096
+            NetworkMode: awsvpc   # 実行モードがFARGATEの場合はawsvpcのみ
+            RequiresCompatibilities:
+            - FARGATE
+            ExecutionRoleArn: !Ref ECSExecutionRole
+            ContainerDefinitions:
+            -   Name: ScreenshotCompareTestExecTestContainer
+                Image: !Sub
+                - ${ECRRepositoryUri}:${ImageTag}
+                - {
+                    ECRRepositoryUri: !ImportValue ECRRepositoryUri,
+                    ImageTag: !ImportValue ImageTag
+                }
+                LogConfiguration:
+                    LogDriver: awslogs
+                    Options:
+                        awslogs-region: !Ref AWS::Region
+                        awslogs-group: !Ref FargateLogGroupAndPolicy.LogGroup
+                        awslogs-stream-prefix: ScreenshotCompareTest
+
+    FargateService:
+        Type: AWS::ECS::Service
+        Properties:
+            ServiceName: !Sub
+            - user-bsdxxxx-${Env}-fargate-service
+            - { Env: !FindInMap [ Env, !Ref AWS::AccountId, Name ] }
+            Cluster: !Ref ECSCluster
+            LaunchType: FARGATE
+            TaskDefinition: !Ref FargateTaskDefinition
+            DesiredCount: 0
+            NetworkConfiguration:
+                AwsvpcConfiguration:
+                    AssignPublicIp: ENABLED
+                    Subnets:
+                    - !FindInMap [ Env, !Ref AWS::AccountId, InfrastructureConfigurationSubnetId ]
+                    SecurityGroups:
+                    - !FindInMap [ Env, !Ref AWS::AccountId, InfrastructureConfigurationSecurityGroupId ]
+
+Outputs:
+    ECSClusterArn:
+        Value: !GetAtt ECSCluster.Arn
+        Export:
+            Name: ECSClusterArn
+    FargateTaskDefinitionArn:
+        Value: !Ref FargateTaskDefinition
+        Export:
+            Name: FargateTaskDefinitionArn
