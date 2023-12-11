@@ -9,33 +9,39 @@ repositories {
 }
 
 dependencies {
+    // lombok
     compileOnly "org.projectlombok:lombok:1.18.28"
     annotationProcessor "org.projectlombok:lombok:1.18.28"
 
+    // ロギング
+    implementation "org.slf4j:slf4j-api:2.0.9"
+    implementation "ch.qos.logback:logback-classic:1.4.11"
+
     // JUnit5
-    implementation 'org.junit.jupiter:junit-jupiter:5.9.2'
+    implementation 'org.junit.jupiter:junit-jupiter:5.9.1'
+    // JUnitを通常のJava実行から動かすlancher
     implementation "org.junit.platform:junit-platform-launcher:1.10.0"
 
     // Selenide
     implementation 'com.codeborne:selenide:6.19.0'
+    // WebDriverManager
+    implementation 'io.github.bonigarcia:webdrivermanager:5.5.3'
     // Selenideの動作をAllure reportに記録するツール
     implementation "io.qameta.allure:allure-selenide:2.21.0"
-    // WebDriverManager
-    implementation 'io.github.bonigarcia:webdrivermanager:5.4.1'
     // Allure ReportのJavaツール
     implementation "io.qameta.allure:allure-java-commons:2.21.0"
     // スクショを撮るライブラリ
     implementation "ru.yandex.qatools.ashot:ashot:1.5.4"
     // PDFを画像化するライブラリ
-    implementation "org.apache.pdfbox:pdfbox:2.0.28"
+    implementation "org.apache.pdfbox:pdfbox:2.0.8"
+
+    // @Stepをレポートに反映させるために必要
+    runtimeOnly 'org.aspectj:aspectjweaver:1.9.20.1'
 
     // 古いバージョンに脆弱性があるため、新しいバージョンを明示的にインストール
     implementation "commons-io:commons-io:2.14.0"
     implementation 'com.google.code.gson:gson:2.10.1'
     implementation 'org.bouncycastle:bcprov-jdk15on:1.70'
-
-    runtimeOnly 'org.aspectj:aspectjweaver:1.9.20.1'
-
 }
 
 configurations {
@@ -43,26 +49,33 @@ configurations {
     runtimeOnly.canBeResolved = true
 }
 
+run {
+    workingDir = buildDir
+
+    def aspectjweaverPath = configurations.runtimeOnly.filter { it.name.contains("aspectjweaver") }
+    jvmArgs["-javaagent:${aspectjweaverPath[0]}"]
+}
+
 application {
     mainClass = "screenshot.compare.test.Main"
 }
 
-run {
-    workingDir = "${buildDir}"
-}
-
-tasks.register('copyLibs', Copy) {
+task copyLibs(type: Copy) {
     from configurations.implementation + configurations.runtimeOnly
     into "${buildDir}/libs/libs"
 }
 
 jar {
     dependsOn copyLibs
+    dependsOn downloadAllure
 
     from sourceSets.main.output
 
-    def manifestClasspath = configurations.implementation.collect { "libs/${it.name}" }
-    manifest.attributes "Class-Path": manifestClasspath.join(" ")
+    exclude "testcase"
+    duplicatesStrategy DuplicatesStrategy.EXCLUDE
+
+    def manifestClasspath = configurations.runtimeClasspath.collect { "libs/${it.name}" }.join(" ")
+    manifest.attributes "Class-Path": manifestClasspath
 
     archiveBaseName = "screenshot-compare-test"
 }
